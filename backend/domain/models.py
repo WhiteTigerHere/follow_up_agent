@@ -14,6 +14,7 @@ class EntityStatus(str, Enum):
     followed_up_2 = 'followed_up_2'
     escalated = 'escalated'
     closed = 'closed'
+    paused = 'paused'
 
 class SourceType(str, Enum):
     email = 'email'
@@ -70,11 +71,3 @@ class FollowUpEntity(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-class FollowUpEvent(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    follow_up_id: UUID
-    event_type: str
-    payload: Dict[str, Any]
-    created_at: datetime

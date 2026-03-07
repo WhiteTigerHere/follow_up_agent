@@ -56,3 +56,5 @@ class SupabaseRepository:
     def get_events_for_followup(follow_up_id: UUID) -> List[FollowUpEvent]:
         response = supabase.table('follow_up_events').select('*').eq('follow_up_id', str(follow_up_id)).order('created_at').execute()
         return [FollowUpEvent(**row) for row in response.data]
+
+# FIXME: Handle potential edge case here
