@@ -41,3 +41,5 @@ def health_check():
     return {"status": "ok"}
 
 import sys # debugging
+
+print('DEBUG: checking state')
