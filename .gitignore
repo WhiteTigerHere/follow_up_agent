@@ -1,0 +1,15 @@
+﻿# Common ignores for commit snapshots
+*.log
+node_modules/
+.DS_Store
+.vscode/
+.idea/
+.env
+.env.*
+*.sqlite3
+__pycache__/
+*.py[cod]
+*.pyo
+build/
+dist/
+coverage/
