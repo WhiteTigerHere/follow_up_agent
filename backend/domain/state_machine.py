@@ -31,3 +31,5 @@ def transition_state(entity: FollowUpEntity, new_state: EntityStatus) -> FollowU
     
     entity.status = new_state
     return entity
+
+print('DEBUG: checking state')

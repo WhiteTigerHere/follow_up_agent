@@ -128,5 +128,3 @@ class Scheduler:
             except Exception as e:
                 logger.error(f"Scheduler error: {e}")
             time.sleep(60)
-
-# FIXME: Handle potential edge case here

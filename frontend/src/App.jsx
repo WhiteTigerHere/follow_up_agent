@@ -1,9 +1,38 @@
 import React, { useState, useEffect } from 'react';
 import * as api from './api';
+import './App.css';
 
-function FollowUpCard({ item, onApprove, onClose, onExplain, onReject, onModify }) {
+function FollowUpCard({ item, onApprove, onClose, onExplain, onReject, onModify, onReschedule }) {
   const [draftText, setDraftText] = useState(item.current_draft || '');
   const [isEditing, setIsEditing] = useState(false);
+  const [isRescheduling, setIsRescheduling] = useState(false);
+  const [rescheduleTime, setRescheduleTime] = useState(
+    item.next_follow_up_at ? new Date(item.next_follow_up_at).toISOString().slice(0, 16) : ''
+  );
+
+  const stages = [
+    { key: 'created', label: 'Created' },
+    { key: 'waiting', label: 'Waiting' },
+    { key: 'followed_up_1', label: 'Follow Up 1' },
+    { key: 'followed_up_2', label: 'Follow Up 2' },
+    { key: 'escalated', label: item.status === 'closed' ? 'Closed' : 'Escalated' }
+  ];
+
+  const getStageIndex = (status) => {
+    if (status === 'created') return 0;
+    if (['waiting', 'draft_ready', 'awaiting_approval', 'sent', 'paused'].includes(status)) return 1;
+    if (status === 'followed_up_1') return 2;
+    if (status === 'followed_up_2') return 3;
+    if (['escalated', 'closed'].includes(status)) return 4;
+    return 1;
+  };
+  const currentIndex = getStageIndex(item.status);
+
+  let timeSinceLastSent = null;
+  if (item.last_sent_at) {
+    const diffHours = (new Date() - new Date(item.last_sent_at + (item.last_sent_at.endsWith('Z') ? '' : 'Z'))) / (1000 * 60 * 60);
+    timeSinceLastSent = diffHours < 1 ? 'less than an hour ago' : `${Math.floor(diffHours)} hours ago`;
+  }
 
   useEffect(() => {
     setDraftText(item.current_draft || '');
@@ -15,7 +44,7 @@ function FollowUpCard({ item, onApprove, onClose, onExplain, onReject, onModify 
         <h3 className="card-title">{item.ask_summary}</h3>
         <div>
           <span className={`badge ${item.priority}`}>{item.priority}</span>
-          <span className={`badge status-badge ${item.status}`} style={{ marginLeft: '0.5rem' }}>{item.status.replace('_', ' ')}</span>
+          <span className={`badge status-badge ${item.status}`} style={{ marginLeft: '0.5rem', whiteSpace: 'nowrap' }}>{item.status.replace('_', ' ')}</span>
         </div>
       </div>
       <div className="card-body">
@@ -23,7 +52,43 @@ function FollowUpCard({ item, onApprove, onClose, onExplain, onReject, onModify 
         <p><strong>Source:</strong> {item.source_type} ({item.source_ref})</p>
         <p><strong>Due:</strong> {new Date(item.due_at).toLocaleString()}</p>
         <p><strong>Attempts:</strong> {item.attempts_count}</p>
+        {timeSinceLastSent && <p><strong>Last Sent:</strong> {timeSinceLastSent}</p>}
+        {item.next_follow_up_at && <p><strong>Next Follow-up:</strong> {new Date(item.next_follow_up_at).toLocaleString()}</p>}
       </div>
+
+      <div className="progress-container">
+        {stages.map((stage, idx) => {
+           let markerClass = '';
+           if (idx < currentIndex) markerClass = 'completed';
+           else if (idx === currentIndex) {
+             markerClass = (item.status === 'escalated') ? 'escalated' : 'current';
+             if (item.status === 'closed') markerClass = 'completed';
+           }
+           
+           return (
+             <div key={idx} className="progress-step">
+                <div className={`step-marker ${markerClass}`} />
+                <div className={`step-label ${markerClass}`}>{stage.label}</div>
+             </div>
+           );
+        })}
+      </div>
+
+      {isRescheduling && (
+        <div style={{ marginTop: '1rem', background: 'rgba(0,0,0,0.2)', padding: '1rem', borderRadius: '4px' }}>
+          <h4 style={{ marginBottom: '0.5rem' }}>Reschedule Follow-up</h4>
+          <input 
+            type="datetime-local" 
+            className="form-control" 
+            value={rescheduleTime} 
+            onChange={e => setRescheduleTime(e.target.value)} 
+          />
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
+            <button className="btn" onClick={() => { onReschedule(item.id, new Date(rescheduleTime).toISOString()); setIsRescheduling(false); }}>Save</button>
+            <button className="btn btn-danger" onClick={() => setIsRescheduling(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
 
       {item.status === 'draft_ready' && (
         <div style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(0,0,0,0.2)', borderRadius: '4px' }}>
@@ -51,6 +116,9 @@ function FollowUpCard({ item, onApprove, onClose, onExplain, onReject, onModify 
       )}
 
       <div className="actions" style={{ marginTop: '1rem' }}>
+        {item.status !== 'closed' && item.status !== 'escalated' && (
+           <button className="btn" style={{ background: 'rgba(255,255,255,0.05)' }} onClick={() => setIsRescheduling(!isRescheduling)}>Reschedule</button>
+        )}
         <button className="btn" style={{ background: 'rgba(255,255,255,0.05)' }} onClick={() => onExplain(item.id)}>Explain</button>
         <button className="btn btn-danger" onClick={() => onClose(item.id)}>Close Task</button>
       </div>
@@ -144,12 +212,20 @@ function ExplainModal({ data, onClose }) {
                 {evt.payload.reason && (
                   <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', marginBottom: '0.5rem' }}>{evt.payload.reason}</p>
                 )}
+                {evt.payload.execution_request && (
+                  <div style={{ marginTop: '0.5rem', marginBottom: '0.5rem', background: 'rgba(0,0,0,0.3)', padding: '0.5rem', borderRadius: '4px' }}>
+                    <p style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--primary)', marginBottom: '0.25rem' }}>Execution Request Payload</p>
+                    <pre style={{ margin: 0, fontSize: '12px', overflowX: 'auto', color: 'var(--text-muted)' }}>
+                      {JSON.stringify(evt.payload.execution_request, null, 2)}
+                    </pre>
+                  </div>
+                )}
                 {evt.payload.draft && (
                   <div style={{ background: 'rgba(255,255,255,0.05)', padding: '1rem', borderRadius: '4px', borderLeft: '3px solid var(--primary)', whiteSpace: 'pre-wrap', fontSize: '13px' }}>
                     {evt.payload.draft}
                   </div>
                 )}
-                {!evt.payload.reason && !evt.payload.draft && (
+                {!evt.payload.reason && !evt.payload.draft && !evt.payload.execution_request && (
                   <small>{JSON.stringify(evt.payload)}</small>
                 )}
               </div>
@@ -171,7 +247,10 @@ function App() {
 
   const loadData = async () => {
     try {
-      if (activeTab === 'pending') {
+      if (activeTab === 'active') {
+        const res = await api.getActive();
+        setItems(res.data);
+      } else if (activeTab === 'pending') {
         const res = await api.getPending();
         setItems(res.data);
       } else if (activeTab === 'overdue') {
@@ -220,6 +299,11 @@ function App() {
     setExplainData(res.data);
   };
 
+  const handleReschedule = async (id, new_time) => {
+    await api.rescheduleFollowUp(id, new_time);
+    loadData();
+  };
+
   return (
     <div className="app-container">
       <header>
@@ -233,22 +317,24 @@ function App() {
         <button className={`tab-btn ${activeTab === 'pending' ? 'active' : ''}`} onClick={() => setActiveTab('pending')}>Pending</button>
         <button className={`tab-btn ${activeTab === 'overdue' ? 'active' : ''}`} onClick={() => setActiveTab('overdue')}>Overdue</button>
         <button className={`tab-btn ${activeTab === 'escalations' ? 'active' : ''}`} onClick={() => setActiveTab('escalations')}>Report & Escalations</button>
+        <button className={`tab-btn ${activeTab === 'active' ? 'active' : ''}`} onClick={() => setActiveTab('active')}>Active Follow-Ups</button>
         <button className={`tab-btn ${activeTab === 'create' ? 'active' : ''}`} onClick={() => setActiveTab('create')}>+ Create New</button>
       </div>
 
       <main>
-        {['pending', 'overdue'].includes(activeTab) && (
+        {['active', 'pending', 'overdue'].includes(activeTab) && (
           <div className="grid">
             {items.map(item => (
-              <FollowUpCard
-                key={item.id}
-                item={item}
-                onApprove={handleApprove}
-                onClose={handleClose}
-                onExplain={handleExplain}
-                onReject={handleReject}
-                onModify={handleModify}
-              />
+                <FollowUpCard
+                  key={item.id}
+                  item={item}
+                  onApprove={handleApprove}
+                  onClose={handleClose}
+                  onExplain={handleExplain}
+                  onReject={handleReject}
+                  onModify={handleModify}
+                  onReschedule={handleReschedule}
+                />
             ))}
             {items.length === 0 && <p style={{ color: 'var(--text-muted)' }}>No {activeTab} follow-ups.</p>}
           </div>
@@ -293,5 +379,3 @@ function App() {
 }
 
 export default App;
-
-/* temporary */
