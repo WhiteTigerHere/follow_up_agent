@@ -33,78 +33,49 @@ class Scheduler:
         entities = self.repo.get_by_status(active_statuses)
         now = datetime.utcnow()
         
+        from .graph import orchestrator
+        from .reply_detector import check_for_reply
+
         for entity in entities:
-            # Check if reply received via some external mock/system
-            # If reply -> close. (Skipped mock here, assumes ReplyDetector runs elsewhere or updates DB)
+            if entity.last_sent_at and entity.status in [EntityStatus.sent, EntityStatus.followed_up_1, EntityStatus.followed_up_2]:
+                reply_info = check_for_reply(entity.source_ref, entity.last_sent_at)
+                if reply_info.get("reply_detected"):
+                    if reply_info.get("reply_type") == "ooo":
+                        entity = transition_state(entity, EntityStatus.paused)
+                        self.save_and_log(entity, f"Paused follow-up due to OOO reply detected in thread: {entity.source_ref}")
+                        continue
+                    else:
+                        entity = transition_state(entity, EntityStatus.closed)
+                        self.save_and_log(entity, f"Closed follow-up due to normal reply detected in thread: {entity.source_ref}")
+                        continue
             
-            # Check if due for draft generation (Initial, Follow-Up 1, Follow-Up 2)
             is_initial_due = (entity.status == EntityStatus.waiting and entity.due_at and entity.due_at.replace(tzinfo=None) <= now)
             is_followup_due = (entity.status in [EntityStatus.sent, EntityStatus.followed_up_1] and entity.next_follow_up_at and entity.next_follow_up_at.replace(tzinfo=None) <= now)
             
             if is_initial_due or is_followup_due:
-                
-                # Prevent generating drafts if we've hit max attempts; we should escalate instead
-                if entity.attempts_count >= 2 and entity.status == EntityStatus.followed_up_2:
-                    pass # handled below
-                else:
-                    from ..domain.skills.draft_generation import DraftGenerationSkill
-                    from .gemini_llm import GeminiDraftingClient
-                    from .pgvector_ctx import PgVectorContextRepository
-                    
-                    # Generate prompt and fetch draft
-                    thread_summary = PgVectorContextRepository.retrieve_thread_summary(entity.source_ref, entity.ask_summary)
-                    prompt = DraftGenerationSkill.generate_draft_prompt(entity, thread_summary)
-                    draft_text = GeminiDraftingClient.generate_draft(prompt)
-                    
-                    # Increment attempts count if we are generating a follow-up draft (not the initial waiting one)
-                    if entity.status in [EntityStatus.sent, EntityStatus.followed_up_1]:
-                        entity.attempts_count += 1
-                        
-                    new_entity = transition_state(entity, EntityStatus.draft_ready)
-                    new_entity.current_draft = draft_text
-                    
-                    # Mode C (Automated) - immediately push to awaiting_approval
-                    if new_entity.mode == ActionMode.auto_send:
-                        new_entity = transition_state(new_entity, EntityStatus.awaiting_approval)
-                        self.save_and_log(new_entity, f"Draft auto-approved by Mode C policy (Attempt {new_entity.attempts_count})", {"draft": draft_text})
-                    else:
-                        self.save_and_log(new_entity, f"Draft generated (Attempt {new_entity.attempts_count})", {"draft": draft_text})
-                    continue
+                # Log explicitly as requested: { reason: "due_time_reached", action: "generate_draft" }
+                self.save_and_log(entity, reason="due_time_reached", extra_payload={"action": "generate_draft"})
             
-            # Execute approved drafts
-            if entity.status == EntityStatus.awaiting_approval:
-                from .executors import EmailExecutorGateway, SlackExecutorGateway
+            initial_status = entity.status
+            try:
+                result = orchestrator.invoke({
+                    "entity": entity,
+                    "thread_summary": None,
+                    "route_action": "none",
+                    "log_reason": None,
+                    "log_payload": None
+                })
                 
-                send_text = entity.current_draft if entity.current_draft else f"Falling back to original ask: {entity.ask_summary}"
+                final_entity = result["entity"]
+                log_reason = result.get("log_reason")
                 
-                # Execute send
-                if entity.channel.value == 'slack':
-                    SlackExecutorGateway.send(entity, send_text)
-                else:
-                    EmailExecutorGateway.send(entity, send_text)
-                
-                # If this is the first sending attempt, go to "sent"
-                if entity.attempts_count == 0:
-                    new_entity = transition_state(entity, EntityStatus.sent)
-                # If this is the first nudge
-                elif entity.attempts_count == 1:
-                    new_entity = transition_state(entity, EntityStatus.followed_up_1)
-                # If this is the second nudge
-                elif entity.attempts_count >= 2:
-                    new_entity = transition_state(entity, EntityStatus.followed_up_2)
+                if log_reason:
+                    self.save_and_log(final_entity, log_reason, result.get("log_payload"))
+                elif initial_status != final_entity.status:
+                    self.save_and_log(final_entity, f"State changed to {final_entity.status.value}")
                     
-                new_entity.last_sent_at = now
-                new_entity.next_follow_up_at = now + timedelta(days=2) # Set next threshold to 2 days
-                
-                self.save_and_log(new_entity, f"Draft approved and successfully transmitted via Gateway (Status: {new_entity.status.value})")
-                continue
-
-            # Check if due for escalation (Only applies AFTER followed_up_2 timeout expires)
-            if entity.status == EntityStatus.followed_up_2 and entity.next_follow_up_at:
-                if entity.next_follow_up_at.replace(tzinfo=None) <= now:
-                    new_entity = transition_state(entity, EntityStatus.escalated)
-                    new_entity.next_follow_up_at = None
-                    self.save_and_log(new_entity, "Escalated after max attempts")
+            except Exception as e:
+                logger.error(f"Error orchestrating entity {entity.id}: {e}")
 
     def save_and_log(self, entity: FollowUpEntity, reason: str, extra_payload: dict = None):
         self.repo.save_follow_up(entity)
@@ -128,5 +99,3 @@ class Scheduler:
             except Exception as e:
                 logger.error(f"Scheduler error: {e}")
             time.sleep(60)
-
-# FIXME: Handle potential edge case here

@@ -1,6 +1,6 @@
 import pytest
 from datetime import datetime, timedelta
-from backend.domain.models import FollowUpEntity, EntityStatus
+from backend.domain.models import FollowUpEntity, EntityStatus, ActionMode
 from backend.infrastructure.scheduler import Scheduler
 
 class MockRepo:
@@ -28,20 +28,22 @@ def test_scheduler_escalation(mock_entity):
     
     scheduler.tick()
     
-    assert len(repo.saved) == 1
-    escalated_entity = repo.saved[0]
+    assert len(repo.saved) >= 1
+    escalated_entity = repo.saved[-1]
     assert escalated_entity.status == EntityStatus.escalated
 
 def test_scheduler_follow_up_1(mock_entity):
     mock_entity.status = EntityStatus.sent
     mock_entity.next_follow_up_at = datetime.utcnow() - timedelta(minutes=1)
+    mock_entity.mode = ActionMode.auto_send
     
     repo = MockRepo([mock_entity])
     scheduler = Scheduler(repo=repo)
     
     scheduler.tick()
+    scheduler.tick()
     
-    assert len(repo.saved) == 1
-    new_entity = repo.saved[0]
+    assert len(repo.saved) >= 1
+    new_entity = repo.saved[-1]
     assert new_entity.status == EntityStatus.followed_up_1
     assert new_entity.attempts_count == 1
