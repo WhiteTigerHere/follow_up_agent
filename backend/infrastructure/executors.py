@@ -5,18 +5,36 @@ logger = logging.getLogger(__name__)
 
 class EmailExecutorGateway:
     @staticmethod
-    def send(entity: FollowUpEntity, content: str):
+    def send(entity: FollowUpEntity, content: str) -> dict:
         """
-        Mock executor for Email.
+        Emits an execution_request instead of sending.
         """
-        logger.info(f"Sending EMAIL to {entity.target_contact} for follow-up {entity.id}\nContent: {content}")
-        return True
+        logger.info(f"Emitting execution_request for EMAIL to {entity.target_contact} for follow-up {entity.id}")
+        return {
+            "draft_body": content,
+            "target_contact": entity.target_contact,
+            "channel": entity.channel.value,
+            "metadata": {
+                "follow_up_id": str(entity.id),
+                "source_ref": entity.source_ref,
+                "priority": entity.priority.value
+            }
+        }
 
 class SlackExecutorGateway:
     @staticmethod
-    def send(entity: FollowUpEntity, content: str):
+    def send(entity: FollowUpEntity, content: str) -> dict:
         """
-        Mock executor for Slack.
+        Emits an execution_request instead of sending.
         """
-        logger.info(f"Sending SLACK to {entity.target_contact} for follow-up {entity.id}\nContent: {content}")
-        return True
+        logger.info(f"Emitting execution_request for SLACK to {entity.target_contact} for follow-up {entity.id}")
+        return {
+            "draft_body": content,
+            "target_contact": entity.target_contact,
+            "channel": entity.channel.value,
+            "metadata": {
+                "follow_up_id": str(entity.id),
+                "source_ref": entity.source_ref,
+                "priority": entity.priority.value
+            }
+        }

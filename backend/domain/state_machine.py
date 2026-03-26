@@ -7,11 +7,12 @@ ALLOWED_TRANSITIONS: Dict[EntityStatus, List[EntityStatus]] = {
     EntityStatus.waiting: [EntityStatus.draft_ready, EntityStatus.closed],
     EntityStatus.draft_ready: [EntityStatus.awaiting_approval, EntityStatus.waiting, EntityStatus.sent, EntityStatus.followed_up_1, EntityStatus.closed],
     EntityStatus.awaiting_approval: [EntityStatus.sent, EntityStatus.followed_up_1, EntityStatus.followed_up_2, EntityStatus.closed],
-    EntityStatus.sent: [EntityStatus.followed_up_1, EntityStatus.draft_ready, EntityStatus.closed],
-    EntityStatus.followed_up_1: [EntityStatus.followed_up_2, EntityStatus.draft_ready, EntityStatus.closed],
-    EntityStatus.followed_up_2: [EntityStatus.escalated, EntityStatus.closed],
+    EntityStatus.sent: [EntityStatus.followed_up_1, EntityStatus.draft_ready, EntityStatus.closed, EntityStatus.paused],
+    EntityStatus.followed_up_1: [EntityStatus.followed_up_2, EntityStatus.draft_ready, EntityStatus.closed, EntityStatus.paused],
+    EntityStatus.followed_up_2: [EntityStatus.escalated, EntityStatus.closed, EntityStatus.paused],
     EntityStatus.escalated: [EntityStatus.closed],
     EntityStatus.closed: [],
+    EntityStatus.paused: [EntityStatus.closed, EntityStatus.waiting],
 }
 
 class InvalidStateTransitionError(Exception):
@@ -31,5 +32,3 @@ def transition_state(entity: FollowUpEntity, new_state: EntityStatus) -> FollowU
     
     entity.status = new_state
     return entity
-
-print('DEBUG: checking state')

@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .controllers.followups import router as followups_router
+from .controllers.ingestion import router as ingestion_router
 import threading
 import logging
 
@@ -19,6 +20,7 @@ app.add_middleware(
 )
 
 app.include_router(followups_router)
+app.include_router(ingestion_router)
 
 @app.on_event("startup")
 def startup_event():
@@ -39,7 +41,3 @@ def startup_event():
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
-
-import sys # debugging
-
-print('DEBUG: checking state')
