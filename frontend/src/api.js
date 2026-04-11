@@ -25,6 +25,14 @@ export const login = (username, password) => {
 export const register = (email, password) => axios.post(`${AUTH_URL}/register`, { email, password });
 export const getGoogleAuthUrl = () => axios.get(`${AUTH_URL}/login/google`);
 
+const WORKSPACE_URL = 'http://localhost:8000/workspaces';
+export const createWorkspace = (name) => axios.post(`${WORKSPACE_URL}`, { name });
+export const joinWorkspace = (join_code) => axios.post(`${WORKSPACE_URL}/join`, { join_code });
+export const getMyWorkspaces = () => axios.get(`${WORKSPACE_URL}/me`);
+export const getWorkspaceMembers = (id) => axios.get(`${WORKSPACE_URL}/${id}/members`);
+export const addWorkspaceMember = (id, email, role) => axios.post(`${WORKSPACE_URL}/${id}/members`, { email, role });
+export const removeWorkspaceMember = (id, user_id) => axios.delete(`${WORKSPACE_URL}/${id}/members/${user_id}`);
+
 
 export const getPending = () => axios.get(`${API_URL}/pending`);
 export const getOverdue = () => axios.get(`${API_URL}/overdue`);

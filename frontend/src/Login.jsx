@@ -2,12 +2,34 @@ import React, { useState, useEffect } from 'react';
 import * as api from './api';
 
 function Login({ onLoginSuccess }) {
-  const [isRegister, setIsRegister] = useState(false);
+  const [mode, setMode] = useState('login'); // 'login', 'register_user', 'register_org'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [joinCode, setJoinCode] = useState('');
+  const [orgName, setOrgName] = useState('');
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const handlePostLoginTasks = async () => {
+    const pendingJoinCode = localStorage.getItem('pending_join_code');
+    const pendingOrgName = localStorage.getItem('pending_org_name');
+    
+    try {
+      if (pendingJoinCode) {
+        await api.joinWorkspace(pendingJoinCode);
+        localStorage.removeItem('pending_join_code');
+        setSuccessMsg('Successfully joined the organization!');
+      } else if (pendingOrgName) {
+        const res = await api.createWorkspace(pendingOrgName);
+        localStorage.removeItem('pending_org_name');
+        setSuccessMsg(`Organization created! Your Join Code is: ${res.data.join_code}`);
+      }
+    } catch (err) {
+      console.error("Post-login task error", err);
+      // Don't override success message if we failed but still logged in
+    }
+  };
 
   useEffect(() => {
     const hash = window.location.hash;
@@ -17,13 +39,21 @@ function Login({ onLoginSuccess }) {
       if (token) {
         localStorage.setItem('token', token);
         window.location.hash = ''; // clear hash
-        onLoginSuccess();
+        handlePostLoginTasks().finally(() => {
+          onLoginSuccess();
+        });
       }
     }
   }, [onLoginSuccess]);
 
   const handleGoogleLogin = async () => {
     try {
+      if (mode === 'register_user' && joinCode) {
+        localStorage.setItem('pending_join_code', joinCode);
+      } else if (mode === 'register_org' && orgName) {
+        localStorage.setItem('pending_org_name', orgName);
+      }
+      
       const res = await api.getGoogleAuthUrl();
       window.location.href = res.data.url;
     } catch (err) {
@@ -38,14 +68,23 @@ function Login({ onLoginSuccess }) {
     setLoading(true);
 
     try {
-      if (isRegister) {
+      if (mode === 'register_user' || mode === 'register_org') {
+        if (mode === 'register_user' && joinCode) {
+          localStorage.setItem('pending_join_code', joinCode);
+        } else if (mode === 'register_org' && orgName) {
+          localStorage.setItem('pending_org_name', orgName);
+        }
+
         await api.register(email, password);
         const res = await api.login(email, password);
         localStorage.setItem('token', res.data.access_token);
+        
+        await handlePostLoginTasks();
         onLoginSuccess();
       } else {
         const res = await api.login(email, password);
         localStorage.setItem('token', res.data.access_token);
+        await handlePostLoginTasks();
         onLoginSuccess();
       }
     } catch (err) {
@@ -67,11 +106,30 @@ function Login({ onLoginSuccess }) {
     <div className="login-container">
       <form className="login-card" onSubmit={handleSubmit}>
         <h2 className="login-title">
-          {isRegister ? 'Create Account' : 'Welcome Back'}
+          {mode === 'login' ? 'Welcome Back' : 'Create Account'}
         </h2>
         <p className="login-subtitle">
-          {isRegister ? 'Join the autonomous execution platform' : 'Access your intelligent agent'}
+          {mode === 'login' ? 'Access your intelligent agent' : 'Join the autonomous execution platform'}
         </p>
+
+        {mode !== 'login' && (
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '1.5rem' }}>
+            <button 
+              type="button" 
+              onClick={() => setMode('register_user')}
+              style={{ flex: 1, padding: '8px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.2)', background: mode === 'register_user' ? 'rgba(255,255,255,0.1)' : 'transparent', color: 'white', cursor: 'pointer' }}
+            >
+              Join Organization
+            </button>
+            <button 
+              type="button" 
+              onClick={() => setMode('register_org')}
+              style={{ flex: 1, padding: '8px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.2)', background: mode === 'register_org' ? 'rgba(255,255,255,0.1)' : 'transparent', color: 'white', cursor: 'pointer' }}
+            >
+              Create Organization
+            </button>
+          </div>
+        )}
 
         <div style={{ marginBottom: '1.5rem' }}>
           <button type="button" className="login-btn-google" onClick={handleGoogleLogin}>
@@ -90,6 +148,32 @@ function Login({ onLoginSuccess }) {
         {error && (
           <div style={{ background: 'rgba(239, 68, 68, 0.1)', color: 'var(--danger)', padding: '0.875rem', borderRadius: '12px', marginBottom: '1.25rem', fontSize: '0.9rem', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
             {error}
+          </div>
+        )}
+
+        {mode === 'register_user' && (
+          <div className="login-input-group">
+            <input 
+              type="text" 
+              className="login-input" 
+              value={joinCode} 
+              onChange={e => setJoinCode(e.target.value)} 
+              required 
+              placeholder="Organization Join Code (e.g. MOCK-123)"
+            />
+          </div>
+        )}
+
+        {mode === 'register_org' && (
+          <div className="login-input-group">
+            <input 
+              type="text" 
+              className="login-input" 
+              value={orgName} 
+              onChange={e => setOrgName(e.target.value)} 
+              required 
+              placeholder="Organization Name"
+            />
           </div>
         )}
 
@@ -112,9 +196,9 @@ function Login({ onLoginSuccess }) {
             onChange={e => setPassword(e.target.value)} 
             required
             placeholder="Password"
-            minLength={isRegister ? 6 : undefined}
+            minLength={mode !== 'login' ? 6 : undefined}
           />
-          {isRegister && (
+          {mode !== 'login' && (
             <small style={{ display: 'block', marginTop: '0.5rem', color: 'rgba(255,255,255,0.4)', fontSize: '11px', marginLeft: '0.5rem' }}>
               Password must be at least 6 characters.
             </small>
@@ -122,18 +206,18 @@ function Login({ onLoginSuccess }) {
         </div>
 
         <button type="submit" className="login-btn-primary" disabled={loading}>
-          {loading ? 'Processing...' : (isRegister ? 'Create Account' : 'Sign In')}
+          {loading ? 'Processing...' : (mode !== 'login' ? 'Create Account' : 'Sign In')}
         </button>
 
         <p style={{ textAlign: 'center', marginTop: '1.5rem', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-          {isRegister ? 'Already have an account?' : "Don't have an account?"}
+          {mode !== 'login' ? 'Already have an account?' : "Don't have an account?"}
           <button 
             type="button" 
             className="login-toggle-link" 
             style={{ marginLeft: '0.5rem' }} 
-            onClick={() => setIsRegister(!isRegister)}
+            onClick={() => setMode(mode === 'login' ? 'register_user' : 'login')}
           >
-            {isRegister ? 'Sign In' : 'Register'}
+            {mode !== 'login' ? 'Sign In' : 'Register'}
           </button>
         </p>
       </form>
