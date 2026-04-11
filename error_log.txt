@@ -17,7 +17,3 @@ Success, final status: EntityStatus.draft_ready
 Success, final status: EntityStatus.draft_ready
 --- Entity 8 - ID: 64c49bfa-42e5-47ec-91b8-6f15f7a34c5d, Status: EntityStatus.draft_ready ---
 Success, final status: EntityStatus.draft_ready
-
-# Updated config
-
-

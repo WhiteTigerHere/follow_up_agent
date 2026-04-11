@@ -1,8 +1,8 @@
 import time
 import logging
-from ..domain.models import FollowUpEntity, EntityStatus, FollowUpEvent, ActionMode
-from ..domain.state_machine import transition_state
-from .supabase_repo import SupabaseRepository
+from domain.models import FollowUpEntity, EntityStatus, FollowUpEvent, ActionMode
+from domain.state_machine import transition_state
+from infrastructure.supabase_repo import SupabaseRepository
 from uuid import uuid4
 from datetime import datetime, timedelta
 

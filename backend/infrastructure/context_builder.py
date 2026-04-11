@@ -1,6 +1,6 @@
 import logging
 from uuid import UUID
-from .supabase_repo import SupabaseRepository, supabase
+from infrastructure.supabase_repo import SupabaseRepository, supabase
 
 logger = logging.getLogger(__name__)
 

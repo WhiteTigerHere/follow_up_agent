@@ -22,5 +22,3 @@ def mock_entity():
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
     )
-
-print('DEBUG: checking state')

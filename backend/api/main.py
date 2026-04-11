@@ -1,7 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .controllers.followups import router as followups_router
-from .controllers.ingestion import router as ingestion_router
+from api.controllers.followups import router as followups_router
+from api.controllers.ingestion import router as ingestion_router
+from api.controllers.auth import router as auth_router
+from api.controllers.workspaces import router as workspaces_router
+from api.dependencies import get_current_user
+from fastapi import Depends
 import threading
 import logging
 
@@ -19,15 +23,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(followups_router)
-app.include_router(ingestion_router)
+app.include_router(auth_router)
+app.include_router(workspaces_router, dependencies=[Depends(get_current_user)])
+app.include_router(followups_router, dependencies=[Depends(get_current_user)])
+app.include_router(ingestion_router, dependencies=[Depends(get_current_user)])
 
 @app.on_event("startup")
 def startup_event():
     """
     Starts the background scheduler loop.
     """
-    from ..infrastructure.scheduler import Scheduler
+    from infrastructure.scheduler import Scheduler
     
     def run_scheduler():
         scheduler = Scheduler()

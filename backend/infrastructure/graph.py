@@ -3,12 +3,12 @@ from typing import TypedDict, Optional
 from langgraph.graph import StateGraph, END
 from datetime import datetime, timedelta
 
-from ..domain.models import FollowUpEntity, EntityStatus, ActionMode
-from ..domain.state_machine import transition_state
-from .pgvector_ctx import PgVectorContextRepository
-from .gemini_llm import GeminiDraftingClient
-from ..domain.skills.draft_generation import DraftGenerationSkill
-from .executors import EmailExecutorGateway, SlackExecutorGateway
+from domain.models import FollowUpEntity, EntityStatus, ActionMode
+from domain.state_machine import transition_state
+from infrastructure.pgvector_ctx import PgVectorContextRepository
+from infrastructure.gemini_llm import GeminiDraftingClient
+from domain.skills.draft_generation import DraftGenerationSkill
+from infrastructure.executors import EmailExecutorGateway, SlackExecutorGateway
 
 class GraphState(TypedDict, total=False):
     entity: FollowUpEntity

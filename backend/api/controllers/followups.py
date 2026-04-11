@@ -4,23 +4,25 @@ from typing import List, Dict, Any
 from uuid import UUID
 from datetime import datetime
 
-from ...domain.models import FollowUpRequest, FollowUpEntity, EntityStatus, FollowUpEvent
-from ...domain.skills.creation import FollowUpCreationSkill
-from ...domain.skills.approval import FollowUpApprovalSkill
-from ...infrastructure.supabase_repo import SupabaseRepository
+from domain.models import FollowUpRequest, FollowUpEntity, EntityStatus, FollowUpEvent
+from domain.skills.creation import FollowUpCreationSkill
+from domain.skills.approval import FollowUpApprovalSkill
+from infrastructure.supabase_repo import SupabaseRepository
+from api.dependencies import get_current_user
 
 router = APIRouter(prefix="/followups", tags=["followups"])
 repo = SupabaseRepository()
 
 @router.post("/create", response_model=FollowUpEntity)
-def create_followup(request: FollowUpRequest):
+def create_followup(request: FollowUpRequest, current_user = Depends(get_current_user)):
     """
     Creates a new Follow-up Request.
     """
+    request.requester_user_id = current_user.id
     entity = FollowUpCreationSkill.create_entity_from_request(request)
     
     # Transition from created to waiting so it becomes "pending" and active in the system
-    from ...domain.state_machine import transition_state
+    from domain.state_machine import transition_state
     entity = transition_state(entity, EntityStatus.waiting)
     
     # Check deduplication here ideally (by source_ref, ask_summary, target_contact)
@@ -114,32 +116,32 @@ def reject_draft(id: UUID):
     return repo.save_follow_up(updated_entity)
 
 @router.get("/active", response_model=List[FollowUpEntity])
-def get_active():
+def get_active(current_user = Depends(get_current_user)):
     """Returns all follow-ups not closed and not escalated."""
     return repo.get_by_status([
         EntityStatus.created, EntityStatus.waiting, EntityStatus.draft_ready, 
         EntityStatus.awaiting_approval, EntityStatus.sent, 
         EntityStatus.followed_up_1, EntityStatus.followed_up_2
-    ])
+    ], user_id=current_user.id)
 
 @router.get("/pending", response_model=List[FollowUpEntity])
-def get_pending():
+def get_pending(current_user = Depends(get_current_user)):
     """Returns active, not yet sent but valid follow-ups (draft_ready, awaiting_approval, waiting)."""
-    return repo.get_by_status([EntityStatus.waiting, EntityStatus.draft_ready, EntityStatus.awaiting_approval])
+    return repo.get_by_status([EntityStatus.waiting, EntityStatus.draft_ready, EntityStatus.awaiting_approval], user_id=current_user.id)
 
 @router.get("/overdue", response_model=List[FollowUpEntity])
-def get_overdue():
+def get_overdue(current_user = Depends(get_current_user)):
     """Returns follow-ups that passed due_at and are still pending/active."""
-    active = repo.get_by_status([EntityStatus.waiting, EntityStatus.draft_ready])
+    active = repo.get_by_status([EntityStatus.waiting, EntityStatus.draft_ready], user_id=current_user.id)
     now = datetime.utcnow()
     # Replace timezoneinfo to ensure proper comparison
     return [e for e in active if e.due_at.replace(tzinfo=None) < now]
 
 @router.get("/report")
-def get_report():
+def get_report(current_user = Depends(get_current_user)):
     """Weekly/overall block report."""
-    escalated = repo.get_by_status([EntityStatus.escalated])
-    pending = repo.get_by_status([EntityStatus.waiting, EntityStatus.draft_ready, EntityStatus.awaiting_approval])
+    escalated = repo.get_by_status([EntityStatus.escalated], user_id=current_user.id)
+    pending = repo.get_by_status([EntityStatus.waiting, EntityStatus.draft_ready, EntityStatus.awaiting_approval], user_id=current_user.id)
     
     return {
         "escalations": [e.model_dump(mode='json') for e in escalated],

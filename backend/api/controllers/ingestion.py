@@ -1,7 +1,8 @@
 from fastapi import APIRouter, HTTPException
-from ...domain.models import IngestThreadRequest
-from ...infrastructure.gemini_llm import GeminiDraftingClient
-from ...infrastructure.pgvector_ctx import PgVectorContextRepository
+from domain.models import IngestThreadRequest, IngestMessage
+from infrastructure.gemini_llm import GeminiDraftingClient
+from infrastructure.pgvector_ctx import PgVectorContextRepository
+from infrastructure.gmail_gateway import get_thread_messages
 
 router = APIRouter(prefix="/ingest", tags=["ingestion"])
 
@@ -29,3 +30,26 @@ def ingest_thread(request: IngestThreadRequest):
         return {"status": "success", "thread_id": request.thread_id, "messages_stored": len(request.messages)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/gmail_thread/{thread_id}")
+def ingest_gmail_thread(thread_id: str):
+    """
+    Fetches a real Gmail thread using the Gmail API, parsing messages
+    and then routing them through the default pgvector ingestion logic.
+    """
+    try:
+        raw_msgs = get_thread_messages(thread_id)
+        
+        # Build the exact same payload structure expected by existing ingestion logic
+        messages = [
+            IngestMessage(author=m["author"], text=m["text"])
+            for m in raw_msgs
+        ]
+        
+        request = IngestThreadRequest(thread_id=thread_id, messages=messages)
+        return ingest_thread(request)
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to fetch and ingest Gmail thread: {str(e)}")

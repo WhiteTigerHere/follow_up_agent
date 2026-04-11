@@ -1,5 +1,5 @@
 import logging
-from ..domain.models import FollowUpEntity
+from domain.models import FollowUpEntity
 
 logger = logging.getLogger(__name__)
 

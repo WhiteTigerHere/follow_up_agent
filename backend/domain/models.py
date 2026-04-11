@@ -71,3 +71,19 @@ class FollowUpEntity(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+class FollowUpEvent(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    follow_up_id: UUID
+    event_type: str
+    payload: Dict[str, Any]
+    created_at: datetime
+
+class IngestMessage(BaseModel):
+    author: str
+    text: str
+
+class IngestThreadRequest(BaseModel):
+    thread_id: str
+    messages: List[IngestMessage]

@@ -4,7 +4,7 @@ from typing import List, Optional, Any
 from uuid import UUID
 from datetime import datetime
 from dotenv import load_dotenv
-from ..domain.models import FollowUpEntity, FollowUpEvent
+from domain.models import FollowUpEntity, FollowUpEvent
 
 # Load the .env from the backend directory regardless of where uvicorn is launched
 env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
@@ -38,10 +38,13 @@ class SupabaseRepository:
         return FollowUpEntity(**response.data[0])
         
     @staticmethod
-    def get_by_status(status_list: List[Any]) -> List[FollowUpEntity]:
+    def get_by_status(status_list: List[Any], user_id: Optional[str] = None) -> List[FollowUpEntity]:
         # Convert enums to string values for the Supabase query
         string_statuses = [s.value if hasattr(s, 'value') else s for s in status_list]
-        response = supabase.table('follow_ups').select('*').in_('status', string_statuses).execute()
+        query = supabase.table('follow_ups').select('*').in_('status', string_statuses)
+        if user_id:
+            query = query.eq('created_by_user_id', user_id)
+        response = query.execute()
         return [FollowUpEntity(**row) for row in response.data]
         
     @staticmethod
@@ -56,5 +59,3 @@ class SupabaseRepository:
     def get_events_for_followup(follow_up_id: UUID) -> List[FollowUpEvent]:
         response = supabase.table('follow_up_events').select('*').eq('follow_up_id', str(follow_up_id)).order('created_at').execute()
         return [FollowUpEvent(**row) for row in response.data]
-
-# FIXME: Handle potential edge case here

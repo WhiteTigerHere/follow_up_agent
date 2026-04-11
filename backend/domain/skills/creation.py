@@ -63,5 +63,3 @@ class FollowUpCreationSkill:
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow()
         )
-
-
