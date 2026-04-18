@@ -37,27 +37,41 @@ class Scheduler:
         from .reply_detector import check_for_reply
 
         for entity in entities:
-            if entity.last_sent_at and entity.status in [EntityStatus.sent, EntityStatus.followed_up_1, EntityStatus.followed_up_2]:
-                reply_info = check_for_reply(entity.source_ref, entity.last_sent_at)
-                if reply_info.get("reply_detected"):
-                    if reply_info.get("reply_type") == "ooo":
-                        entity = transition_state(entity, EntityStatus.paused)
-                        self.save_and_log(entity, f"Paused follow-up due to OOO reply detected in thread: {entity.source_ref}")
-                        continue
-                    else:
-                        entity = transition_state(entity, EntityStatus.closed)
-                        self.save_and_log(entity, f"Closed follow-up due to normal reply detected in thread: {entity.source_ref}")
-                        continue
-            
-            is_initial_due = (entity.status == EntityStatus.waiting and entity.due_at and entity.due_at.replace(tzinfo=None) <= now)
-            is_followup_due = (entity.status in [EntityStatus.sent, EntityStatus.followed_up_1] and entity.next_follow_up_at and entity.next_follow_up_at.replace(tzinfo=None) <= now)
-            
-            if is_initial_due or is_followup_due:
-                # Log explicitly as requested: { reason: "due_time_reached", action: "generate_draft" }
-                self.save_and_log(entity, reason="due_time_reached", extra_payload={"action": "generate_draft"})
-            
-            initial_status = entity.status
             try:
+                is_escalation_due = (
+                    entity.status == EntityStatus.followed_up_2
+                    and entity.next_follow_up_at
+                    and entity.next_follow_up_at.replace(tzinfo=None) <= now
+                )
+                if is_escalation_due:
+                    entity = transition_state(entity, EntityStatus.escalated)
+                    entity.next_follow_up_at = None
+                    self.save_and_log(entity, "Escalated after max attempts")
+                    continue
+
+                if entity.last_sent_at and entity.status in [EntityStatus.sent, EntityStatus.followed_up_1]:
+                    reply_info = check_for_reply(entity.source_ref, entity.last_sent_at)
+                    if reply_info.get("reply_detected"):
+                        if reply_info.get("reply_type") == "ooo":
+                            # OOO reply: show an acknowledgement card rather than sending more follow-ups.
+                            entity = transition_state(entity, EntityStatus.draft_ready)
+                            entity.current_draft = "[REPLY_DETECTED] OOO reply found."
+                            self.save_and_log(entity, f"OOO reply detected in thread: {entity.source_ref}. Waiting for user acknowledgment.")
+                            continue
+                        else:
+                            entity = transition_state(entity, EntityStatus.draft_ready)
+                            entity.current_draft = "[REPLY_DETECTED] Normal reply found."
+                            self.save_and_log(entity, f"Normal reply detected in thread: {entity.source_ref}. Waiting for user acknowledgment.")
+                            continue
+
+                is_initial_due = (entity.status == EntityStatus.waiting and entity.due_at and entity.due_at.replace(tzinfo=None) <= now)
+                is_followup_due = (entity.status in [EntityStatus.sent, EntityStatus.followed_up_1] and entity.next_follow_up_at and entity.next_follow_up_at.replace(tzinfo=None) <= now)
+
+                if is_initial_due or is_followup_due:
+                    # Log explicitly as requested: { reason: "due_time_reached", action: "generate_draft" }
+                    self.save_and_log(entity, reason="due_time_reached", extra_payload={"action": "generate_draft"})
+
+                initial_status = entity.status
                 result = orchestrator.invoke({
                     "entity": entity,
                     "thread_summary": None,

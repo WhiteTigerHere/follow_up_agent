@@ -76,16 +76,16 @@ def test_explain_escalated(mock_get_follow_up, mock_get_events):
 
 @patch('backend.api.controllers.followups.repo.get_events_for_followup')
 @patch('backend.api.controllers.followups.repo.get_follow_up')
-def test_explain_paused_ooo(mock_get_follow_up, mock_get_events):
-    mock_entity = create_mock_entity(EntityStatus.paused, ActionMode.auto_send)
+def test_explain_closed_ooo(mock_get_follow_up, mock_get_events):
+    mock_entity = create_mock_entity(EntityStatus.closed, ActionMode.auto_send)
     mock_get_follow_up.return_value = mock_entity
     
     mock_get_events.return_value = [
-        create_mock_event("Paused follow-up due to OOO reply detected")
+        create_mock_event("Closed follow-up due to OOO reply detected")
     ]
     
     response = client.get(f"/followups/{mock_entity.id}/explain")
     data = response.json()
     
     assert "Out of Office reply was detected" in data["reason_triggered"]
-    assert "Paused. Requires manual intervention" in data["next_action"]
+    assert "Terminal state." in data["next_action"]

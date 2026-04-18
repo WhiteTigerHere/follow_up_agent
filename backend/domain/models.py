@@ -14,7 +14,6 @@ class EntityStatus(str, Enum):
     followed_up_2 = 'followed_up_2'
     escalated = 'escalated'
     closed = 'closed'
-    paused = 'paused'
 
 class SourceType(str, Enum):
     email = 'email'

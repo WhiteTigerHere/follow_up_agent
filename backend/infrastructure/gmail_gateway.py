@@ -63,13 +63,39 @@ def _get_body_from_payload(payload):
                  
     return ""
 
-def get_thread_messages(thread_id: str):
+_THREAD_ID_CACHE = {}
+
+def find_thread_id_by_query(query: str):
     """
-    Given a Gmail thread_id, fetches the thread and returns a list of messages.
+    Searches Gmail for a thread matching the given query (e.g. subject)
+    and returns its thread ID. If not found, returns None.
+    """
+    if query in _THREAD_ID_CACHE:
+        return _THREAD_ID_CACHE[query]
+
+    service = get_gmail_service()
+    results = service.users().threads().list(userId='me', q=query).execute()
+    threads = results.get('threads', [])
+    if threads:
+         _THREAD_ID_CACHE[query] = threads[0]['id']
+         return threads[0]['id']
+    return None
+
+def get_thread_messages(thread_id_or_subject: str):
+    """
+    Given a Gmail thread_id or subject, fetches the thread and returns a list of messages.
     Returns: [{"id": msg_id, "author": sender, "text": body_text, "date": int_ms, "internalDate": string}]
     """
+    import re
+    if not re.match(r"^[0-9a-fA-F]{15,20}$", thread_id_or_subject):
+        actual_thread_id = find_thread_id_by_query(thread_id_or_subject)
+        if not actual_thread_id:
+            raise ValueError(f"Could not find any Gmail thread matching: {thread_id_or_subject}")
+    else:
+        actual_thread_id = thread_id_or_subject
+
     service = get_gmail_service()
-    thread = service.users().threads().get(userId='me', id=thread_id).execute()
+    thread = service.users().threads().get(userId='me', id=actual_thread_id).execute()
     messages_data = thread.get('messages', [])
     
     parsed_messages = []

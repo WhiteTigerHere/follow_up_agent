@@ -6,9 +6,41 @@ CREATE TYPE priority_enum AS ENUM ('low', 'medium', 'high', 'urgent');
 CREATE TYPE channel_enum AS ENUM ('email', 'slack', 'unknown');
 CREATE TYPE action_mode_enum AS ENUM ('draft_only', 'approval_required', 'auto_send');
 
+CREATE TABLE workspaces (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    join_code TEXT UNIQUE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+ALTER TABLE workspaces DISABLE ROW LEVEL SECURITY;
+
+CREATE TABLE workspace_users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    role TEXT NOT NULL DEFAULT 'user',
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    UNIQUE(workspace_id, user_id)
+);
+ALTER TABLE workspace_users DISABLE ROW LEVEL SECURITY;
+
+-- Function to securely fetch workspace members with their emails
+CREATE OR REPLACE FUNCTION get_workspace_members_with_email(p_workspace_id UUID)
+RETURNS TABLE (user_id UUID, role TEXT, created_at TIMESTAMP WITH TIME ZONE, email TEXT)
+SECURITY DEFINER
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT wu.user_id, wu.role, wu.created_at, au.email::TEXT
+  FROM public.workspace_users wu
+  JOIN auth.users au ON au.id = wu.user_id
+  WHERE wu.workspace_id = p_workspace_id;
+END;
+$$ LANGUAGE plpgsql;
+
 CREATE TABLE follow_ups (
     id UUID PRIMARY KEY,
-    workspace_id TEXT NOT NULL,
+    workspace_id UUID NOT NULL REFERENCES workspaces(id),
     created_by_user_id TEXT NOT NULL,
     source_type source_type_enum NOT NULL,
     source_ref TEXT NOT NULL,

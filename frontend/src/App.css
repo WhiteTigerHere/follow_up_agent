@@ -11,9 +11,11 @@
   will-change: filter;
   transition: filter 300ms;
 }
+
 .logo:hover {
   filter: drop-shadow(0 0 2em #646cffaa);
 }
+
 .logo.react:hover {
   filter: drop-shadow(0 0 2em #61dafbaa);
 }
@@ -22,6 +24,7 @@
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
@@ -79,9 +82,18 @@
   margin-top: 4px;
 }
 
-.step-marker.completed { background-color: #2ea44f; }
-.step-marker.current { background-color: var(--primary); box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.4); }
-.step-marker.escalated { background-color: var(--danger); }
+.step-marker.completed {
+  background-color: #2ea44f;
+}
+
+.step-marker.current {
+  background-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.4);
+}
+
+.step-marker.escalated {
+  background-color: var(--danger);
+}
 
 .step-label {
   font-size: 10px;
@@ -89,7 +101,49 @@
   color: var(--text-muted);
 }
 
-.step-label.current, .step-label.escalated {
+.step-label.current,
+.step-label.escalated {
   color: var(--text);
   font-weight: bold;
+}
+
+.card-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.card-title {
+  text-align: center;
+  max-width: 90%;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.header-left {
+  flex: 1;
+  text-align: left;
+}
+
+.header-right {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.modal-content {
+  text-align: left;
+}
+
+.timeline-item {
+  text-align: left;
+}
+
+.badge-group-center {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }

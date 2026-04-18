@@ -1,0 +1,12 @@
+According to the 2026 Orion Systems Internal Communication Policy:
+
+1. Any financial escalation request where the estimated cost exceeds $4,500 must include the exact phrase:
+   "Delta-Secure-Approval-Needed"
+
+2. The phrase must appear naturally within the body of the follow-up message and not as a standalone line.
+
+3. This requirement applies to all follow-ups sent via email or Slack when requesting updates or approvals related to infrastructure upgrades, vendor payments, or budget overruns.
+
+4. If the escalation has already been sent once, all subsequent follow-ups must retain the same phrase to maintain audit consistency.
+
+5. For escalations below $4,500, no special phrase is required.

@@ -46,3 +46,24 @@ export const explainFollowUp = (id) => axios.get(`${API_URL}/${id}/explain`);
 export const getActive = () => axios.get(`${API_URL}/active`);
 export const rescheduleFollowUp = (id, new_time) => axios.post(`${API_URL}/${id}/reschedule`, { new_time });
 export const importGmailThread = (threadId) => axios.post(`http://localhost:8000/ingest/gmail_thread/${threadId}`);
+
+export const uploadOrgDocument = (formData) =>
+  axios.post('http://localhost:8000/ingest/org_document', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+
+export const getOrgDocuments = (workspaceId) => axios.get(`http://localhost:8000/ingest/org_documents?workspace_id=${workspaceId}`);
+
+export const deleteOrgDocument = (filename, workspaceId) =>
+  axios.delete(`http://localhost:8000/ingest/org_document?filename=${encodeURIComponent(filename)}&workspace_id=${workspaceId}`);
+
+export const downloadOrgDocument = (filename, workspaceId) => {
+  // Streaming download — open directly so the browser handles the file save dialog
+  const token = localStorage.getItem('token');
+  const url = `http://localhost:8000/ingest/org_document/download?filename=${encodeURIComponent(filename)}&workspace_id=${workspaceId}`;
+  // Fetch as blob so we can attach the auth header (endpoint is auth-guarded)
+  return axios.get(url, {
+    headers: { Authorization: `Bearer ${token}` },
+    responseType: 'blob',
+  });
+};

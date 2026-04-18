@@ -31,15 +31,15 @@ def mock_repo():
 
 @patch('backend.infrastructure.reply_detector.check_for_reply')
 @patch('backend.infrastructure.graph.orchestrator.invoke')
-def test_scheduler_pauses_on_ooo(mock_invoke, mock_check, mock_repo):
+def test_scheduler_closes_on_ooo(mock_invoke, mock_check, mock_repo):
     mock_check.return_value = {"reply_detected": True, "reply_type": "ooo"}
     
     scheduler = Scheduler(repo=mock_repo)
     scheduler.tick()
     
-    # Entity should be paused
+    # OOO reply: entity should now be closed (paused state removed)
     entity = mock_repo.save_follow_up.call_args[0][0]
-    assert entity.status == EntityStatus.paused
+    assert entity.status == EntityStatus.closed
     # Orchestrator should not be called
     mock_invoke.assert_not_called()
 

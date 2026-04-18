@@ -18,18 +18,18 @@ def create_followup(request: FollowUpRequest, current_user = Depends(get_current
     """
     Creates a new Follow-up Request.
     """
-    request.requester_user_id = current_user.id
-    entity = FollowUpCreationSkill.create_entity_from_request(request)
-    
-    # Transition from created to waiting so it becomes "pending" and active in the system
-    from domain.state_machine import transition_state
-    entity = transition_state(entity, EntityStatus.waiting)
-    
-    # Check deduplication here ideally (by source_ref, ask_summary, target_contact)
-    # Mocking dedupe check for prototype
-    
-    saved_entity = repo.save_follow_up(entity)
-    return saved_entity
+    try:
+        request.requester_user_id = current_user.id
+        entity = FollowUpCreationSkill.create_entity_from_request(request)
+        
+        # Transition from created to waiting so it becomes "pending" and active in the system
+        from domain.state_machine import transition_state
+        entity = transition_state(entity, EntityStatus.waiting)
+        
+        saved_entity = repo.save_follow_up(entity)
+        return saved_entity
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create follow-up: {str(e)}")
 
 @router.post("/{id}/approve", response_model=FollowUpEntity)
 def approve_draft(id: UUID):
@@ -42,7 +42,31 @@ def approve_draft(id: UUID):
         
     try:
         updated_entity = FollowUpApprovalSkill.approve_draft(entity)
-        return repo.save_follow_up(updated_entity)
+        from infrastructure.graph import orchestrator
+        from uuid import uuid4
+
+        result = orchestrator.invoke({
+            "entity": updated_entity,
+            "thread_summary": None,
+            "route_action": "none",
+            "log_reason": None,
+            "log_payload": None
+        })
+
+        final_entity = repo.save_follow_up(result["entity"])
+        log_reason = result.get("log_reason") or f"Draft approved and status updated to {final_entity.status.value}"
+        repo.log_event(FollowUpEvent(
+            id=uuid4(),
+            follow_up_id=id,
+            event_type=f"transition_{final_entity.status.value}",
+            payload={
+                "reason": log_reason,
+                "channel": final_entity.channel.value,
+                **(result.get("log_payload") or {})
+            },
+            created_at=datetime.utcnow()
+        ))
+        return final_entity
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -121,7 +145,7 @@ def get_active(current_user = Depends(get_current_user)):
     return repo.get_by_status([
         EntityStatus.created, EntityStatus.waiting, EntityStatus.draft_ready, 
         EntityStatus.awaiting_approval, EntityStatus.sent, 
-        EntityStatus.followed_up_1, EntityStatus.followed_up_2
+        EntityStatus.followed_up_1
     ], user_id=current_user.id)
 
 @router.get("/pending", response_model=List[FollowUpEntity])
@@ -140,7 +164,7 @@ def get_overdue(current_user = Depends(get_current_user)):
 @router.get("/report")
 def get_report(current_user = Depends(get_current_user)):
     """Weekly/overall block report."""
-    escalated = repo.get_by_status([EntityStatus.escalated], user_id=current_user.id)
+    escalated = repo.get_by_status([EntityStatus.followed_up_2, EntityStatus.escalated], user_id=current_user.id)
     pending = repo.get_by_status([EntityStatus.waiting, EntityStatus.draft_ready, EntityStatus.awaiting_approval], user_id=current_user.id)
     
     return {
@@ -177,7 +201,7 @@ def explain_followup(id: UUID):
             elif "Escalated" in reason:
                 reason_triggered = "Escalation happened because the maximum number of follow-up attempts was exhausted."
             elif "OOO" in reason:
-                reason_triggered = "Follow-up was paused because an Out of Office reply was detected."
+                reason_triggered = "Follow-up was closed because an Out of Office reply was detected."
             elif "normal reply" in reason:
                 reason_triggered = "Follow-up was closed because a normal reply was received."
             else:
@@ -196,8 +220,6 @@ def explain_followup(id: UUID):
         next_action = "Monitoring thread for replies and waiting for the next due time."
     elif entity.status == EntityStatus.awaiting_approval:
         next_action = "Draft is automatically progressing through the graph safely and will be sent shortly."
-    elif entity.status == EntityStatus.paused:
-        next_action = "Paused. Requires manual intervention to resume follow-ups."
     elif entity.status in [EntityStatus.escalated, EntityStatus.closed]:
         next_action = "Terminal state. No further actions will be taken automatically."
     
