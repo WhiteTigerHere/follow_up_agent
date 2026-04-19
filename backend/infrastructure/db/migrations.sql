@@ -69,6 +69,26 @@ CREATE TABLE follow_up_events (
 -- Index for scheduler queries
 CREATE INDEX idx_follow_ups_status_due_at ON follow_ups(status, due_at);
 
+-- Per-user Google/Gmail OAuth tokens.
+-- Apply this block in Supabase before using the in-app "Connect Gmail" flow.
+CREATE TABLE IF NOT EXISTS user_google_tokens (
+    user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    google_email TEXT NOT NULL,
+    access_token TEXT NOT NULL,
+    refresh_token TEXT,
+    token_uri TEXT NOT NULL DEFAULT 'https://oauth2.googleapis.com/token',
+    client_id TEXT NOT NULL,
+    client_secret TEXT NOT NULL,
+    scopes TEXT[] NOT NULL DEFAULT ARRAY[
+        'https://www.googleapis.com/auth/gmail.readonly',
+        'https://www.googleapis.com/auth/gmail.send'
+    ],
+    expiry TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+ALTER TABLE user_google_tokens DISABLE ROW LEVEL SECURITY;
+
 -- Phase 2: pgvector Context Setup
 create extension if not exists vector;
 

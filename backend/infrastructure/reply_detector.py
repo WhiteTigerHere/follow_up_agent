@@ -1,7 +1,7 @@
 import re
 from datetime import datetime
 
-def check_for_reply(thread_id: str, last_sent_at: datetime) -> dict:
+def check_for_reply(thread_id: str, last_sent_at: datetime, user_id: str = None) -> dict:
     """
     Checks if a reply has been received in the given thread after `last_sent_at`
     using the real Gmail API.
@@ -12,7 +12,7 @@ def check_for_reply(thread_id: str, last_sent_at: datetime) -> dict:
         since_ms = int(last_sent_at.timestamp() * 1000)
         # Attempt to filter out self-replies by passing a dummy email (ideally we would pass the real auth'd email)
         # Since the user didn't specify, we'll blindly return the check
-        return check_new_replies_since(thread_id, since_ms)
+        return check_new_replies_since(thread_id, since_ms, user_id=user_id)
     except Exception as e:
         import traceback
         traceback.print_exc()

@@ -2,10 +2,14 @@ import os
 import google.generativeai as genai
 from infrastructure.supabase_repo import supabase
 from dotenv import load_dotenv
+from domain.privacy import redact_text
 
 env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
 load_dotenv(dotenv_path=env_path, override=True)
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "dummy_key"))
+
+def _configure_gemini():
+    load_dotenv(dotenv_path=env_path, override=True)
+    genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "dummy_key"))
 
 class PgVectorContextRepository:
     """
@@ -14,10 +18,12 @@ class PgVectorContextRepository:
     @staticmethod
     def get_embedding(text: str) -> list[float]:
         try:
+            _configure_gemini()
+            safe_text = redact_text(text)
             # Using gemini-embedding-001 as it's universally available and truncating to 768 dimensions
             result = genai.embed_content(
                 model="models/gemini-embedding-001",
-                content=text,
+                content=safe_text,
                 task_type="retrieval_document",
                 output_dimensionality=768
             )
@@ -32,7 +38,7 @@ class PgVectorContextRepository:
         Embeds the current Ask Summary and searches `document_embeddings` 
         for the closest semantic match within this specific source_ref thread.
         """
-        query_embedding = PgVectorContextRepository.get_embedding(ask_summary)
+        query_embedding = PgVectorContextRepository.get_embedding(redact_text(ask_summary))
         if not query_embedding:
             return "Context retrieval failed: Embedding error."
 
@@ -52,7 +58,7 @@ class PgVectorContextRepository:
                 return "No explicit previous context found in the thread."
                 
             # Concatenate the top matching text chunks
-            context = "\n".join([row['content'] for row in response.data])
+            context = "\n".join([redact_text(row['content']) for row in response.data])
             return f"Retrieved Context:\n{context}"
             
         except Exception as e:
@@ -64,10 +70,11 @@ class PgVectorContextRepository:
         """
         Helper method to insert new emails/messages into the vector DB.
         """
-        embedding = PgVectorContextRepository.get_embedding(text)
+        safe_text = redact_text(text)
+        embedding = PgVectorContextRepository.get_embedding(safe_text)
         if embedding:
             supabase.table('document_embeddings').insert({
                 "source_ref": source_ref,
-                "content": text,
+                "content": safe_text,
                 "embedding": embedding
             }).execute()

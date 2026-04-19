@@ -9,6 +9,7 @@ from domain.skills.creation import FollowUpCreationSkill
 from domain.skills.approval import FollowUpApprovalSkill
 from infrastructure.supabase_repo import SupabaseRepository
 from api.dependencies import get_current_user
+from infrastructure.gmail_gateway import get_thread_details
 
 router = APIRouter(prefix="/followups", tags=["followups"])
 repo = SupabaseRepository()
@@ -20,6 +21,28 @@ def create_followup(request: FollowUpRequest, current_user = Depends(get_current
     """
     try:
         request.requester_user_id = current_user.id
+        if request.source_type == "email":
+            details = get_thread_details(request.source_ref, current_user.id)
+            request.source_ref = details["thread_id"]
+            if not request.ask_summary.strip():
+                request.ask_summary = details["ask_summary"]
+            if not request.target_persons and details["target_email"]:
+                request.target_persons = [details["target_email"]]
+
+            duplicate = repo.find_active_duplicate(
+                user_id=current_user.id,
+                workspace_id=request.workspace_id,
+                source_type=request.source_type.value,
+                source_ref=request.source_ref,
+            )
+            if duplicate:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "An active follow-up for this email thread already exists. "
+                        "Close the existing follow-up before creating a new one for the same thread."
+                    ),
+                )
         entity = FollowUpCreationSkill.create_entity_from_request(request)
         
         # Transition from created to waiting so it becomes "pending" and active in the system
@@ -28,6 +51,8 @@ def create_followup(request: FollowUpRequest, current_user = Depends(get_current
         
         saved_entity = repo.save_follow_up(entity)
         return saved_entity
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create follow-up: {str(e)}")
 
@@ -115,7 +140,8 @@ def reschedule_followup(id: UUID, req: RescheduleRequest):
     if not entity:
         raise HTTPException(status_code=404, detail="Follow-up not found")
         
-    entity.next_follow_up_at = req.new_time
+    normalized_time = req.new_time.replace(second=0, microsecond=0)
+    entity.next_follow_up_at = normalized_time
     entity.updated_at = datetime.utcnow()
     repo.save_follow_up(entity)
     
@@ -124,7 +150,7 @@ def reschedule_followup(id: UUID, req: RescheduleRequest):
         id=uuid4(),
         follow_up_id=id,
         event_type="rescheduled",
-        payload={"reason": f"User manually rescheduled to {req.new_time.isoformat()}"},
+        payload={"reason": f"User manually rescheduled to {normalized_time.isoformat()}"},
         created_at=datetime.utcnow()
     ))
     return entity
@@ -145,7 +171,7 @@ def get_active(current_user = Depends(get_current_user)):
     return repo.get_by_status([
         EntityStatus.created, EntityStatus.waiting, EntityStatus.draft_ready, 
         EntityStatus.awaiting_approval, EntityStatus.sent, 
-        EntityStatus.followed_up_1
+        EntityStatus.followed_up_1, EntityStatus.followed_up_2
     ], user_id=current_user.id)
 
 @router.get("/pending", response_model=List[FollowUpEntity])
@@ -164,12 +190,14 @@ def get_overdue(current_user = Depends(get_current_user)):
 @router.get("/report")
 def get_report(current_user = Depends(get_current_user)):
     """Weekly/overall block report."""
-    escalated = repo.get_by_status([EntityStatus.followed_up_2, EntityStatus.escalated], user_id=current_user.id)
-    pending = repo.get_by_status([EntityStatus.waiting, EntityStatus.draft_ready, EntityStatus.awaiting_approval], user_id=current_user.id)
+    escalated = repo.get_by_status([EntityStatus.escalated], user_id=current_user.id)
+    escalation_count = len(escalated)
     
     return {
         "escalations": [e.model_dump(mode='json') for e in escalated],
-        "blocking_you_summary": f"You have {len(pending)} pending items blocking your workflow."
+        "blocking_you_summary": (
+            f"You have {escalation_count} escalated item{'s' if escalation_count != 1 else ''} requiring attention."
+        )
     }
 
 @router.post("/batch_overdue")

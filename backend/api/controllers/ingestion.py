@@ -1,14 +1,16 @@
 import os
 import io
 import tempfile
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
 from fastapi.responses import StreamingResponse
 from typing import Optional
 from domain.models import IngestThreadRequest, IngestMessage
 from infrastructure.gemini_llm import GeminiDraftingClient
 from infrastructure.pgvector_ctx import PgVectorContextRepository
-from infrastructure.gmail_gateway import get_thread_messages
+from infrastructure.gmail_gateway import get_thread_messages, get_thread_details
 from infrastructure.supabase_repo import supabase
+from api.dependencies import get_current_user
+from domain.privacy import redact_text
 
 router = APIRouter(prefix="/ingest", tags=["ingestion"])
 
@@ -38,7 +40,7 @@ def ingest_thread(request: IngestThreadRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/gmail_thread/{thread_id_or_subject}")
-def ingest_gmail_thread(thread_id_or_subject: str):
+def ingest_gmail_thread(thread_id_or_subject: str, current_user = Depends(get_current_user)):
     """
     Fetches a real Gmail thread using the Gmail API, parsing messages
     and then routing them through the default pgvector ingestion logic.
@@ -50,13 +52,14 @@ def ingest_gmail_thread(thread_id_or_subject: str):
         # Determine if it's a valid Gmail thread ID or a subject
         # Valid Gmail thread IDs are usually hexadecimal strings of length ~16
         if not re.match(r"^[0-9a-fA-F]{15,20}$", thread_id_or_subject):
-            actual_thread_id = find_thread_id_by_query(thread_id_or_subject)
+            actual_thread_id = find_thread_id_by_query(thread_id_or_subject, current_user.id)
             if not actual_thread_id:
                 raise ValueError(f"Could not find any Gmail thread matching: {thread_id_or_subject}")
         else:
             actual_thread_id = thread_id_or_subject
 
-        raw_msgs = get_thread_messages(actual_thread_id)
+        details = get_thread_details(actual_thread_id, current_user.id)
+        raw_msgs = details["messages"]
         
         # Build the exact same payload structure expected by existing ingestion logic
         messages = [
@@ -65,7 +68,14 @@ def ingest_gmail_thread(thread_id_or_subject: str):
         ]
         
         request = IngestThreadRequest(thread_id=actual_thread_id, messages=messages)
-        return ingest_thread(request)
+        result = ingest_thread(request)
+        result.update({
+            "thread_id": details["thread_id"],
+            "subject": details["subject"],
+            "target_email": details["target_email"],
+            "ask_summary": details["ask_summary"],
+        })
+        return result
         
     except Exception as e:
         import traceback
@@ -128,15 +138,16 @@ async def upload_org_document(
 
         success_count = 0
         for chunk in chunks:
+            safe_chunk = redact_text(chunk)
             result = genai.embed_content(
                 model="models/gemini-embedding-001",
-                content=chunk,
+                content=safe_chunk,
                 task_type="retrieval_document",
                 output_dimensionality=768
             )
             embedding = result["embedding"]
             supabase.table("org_document_embeddings").insert({
-                "content": chunk,
+                "content": safe_chunk,
                 "embedding": embedding,
                 "workspace_id": workspace_id,
                 "metadata": {

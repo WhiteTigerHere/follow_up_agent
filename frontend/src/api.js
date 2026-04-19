@@ -24,6 +24,10 @@ export const login = (username, password) => {
 
 export const register = (email, password) => axios.post(`${AUTH_URL}/register`, { email, password });
 export const getGoogleAuthUrl = () => axios.get(`${AUTH_URL}/login/google`);
+export const getGmailStatus = () => axios.get(`${AUTH_URL}/gmail/status`);
+export const getGmailConnectUrl = (frontend_url) => axios.get(`${AUTH_URL}/gmail/connect`, {
+  params: frontend_url ? { frontend_url } : {},
+});
 
 const WORKSPACE_URL = 'http://localhost:8000/workspaces';
 export const createWorkspace = (name) => axios.post(`${WORKSPACE_URL}`, { name });

@@ -28,13 +28,13 @@ function FollowUpCard({ item, onApprove, onClose, onExplain, onReject, onModify,
   const getStageIndex = (status) => {
     if (status === 'created') return 0;
     if (['draft_ready', 'awaiting_approval'].includes(status)) {
-      if (item.attempts_count >= 2) return 4;
+      if (item.attempts_count >= 2) return 3;
       if (item.attempts_count === 1) return 2;
       return 1;
     }
     if (['waiting', 'sent'].includes(status)) return 1;
     if (status === 'followed_up_1') return 2;
-    if (status === 'followed_up_2') return 4;
+    if (status === 'followed_up_2') return 3;
     if (['escalated', 'closed'].includes(status)) return 4;
     return 1;
   };
@@ -99,7 +99,12 @@ function FollowUpCard({ item, onApprove, onClose, onExplain, onReject, onModify,
             onChange={e => setRescheduleTime(e.target.value)}
           />
           <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
-            <button className="btn" onClick={() => { onReschedule(item.id, new Date(rescheduleTime).toISOString()); setIsRescheduling(false); }}>Save</button>
+            <button className="btn" onClick={() => {
+              const nextTime = new Date(rescheduleTime);
+              nextTime.setSeconds(0, 0);
+              onReschedule(item.id, nextTime.toISOString());
+              setIsRescheduling(false);
+            }}>Save</button>
             <button className="btn btn-danger" onClick={() => setIsRescheduling(false)}>Cancel</button>
           </div>
         </div>
@@ -174,6 +179,15 @@ function CreateForm({ onCreated, workspaceId }) {
 
   const [isImporting, setIsImporting] = useState(false);
   const [importStatus, setImportStatus] = useState('');
+  const [threadPreview, setThreadPreview] = useState(null);
+
+  const isEmailThread = formData.source_type === 'email';
+
+  useEffect(() => {
+    if (!isEmailThread) {
+      setThreadPreview(null);
+    }
+  }, [isEmailThread]);
 
   const handleImport = async () => {
     if (!formData.source_ref) {
@@ -184,8 +198,21 @@ function CreateForm({ onCreated, workspaceId }) {
     setImportStatus('Importing...');
     try {
       const res = await api.importGmailThread(formData.source_ref);
+      setThreadPreview({
+        thread_id: res.data.thread_id,
+        subject: res.data.subject,
+        target_email: res.data.target_email,
+        ask_summary: res.data.ask_summary,
+      });
+      setFormData(prev => ({
+        ...prev,
+        source_ref: res.data.thread_id || prev.source_ref,
+        target_persons: res.data.target_email || prev.target_persons,
+        ask_summary: res.data.ask_summary || prev.ask_summary,
+      }));
       setImportStatus(`Success! ${res.data.messages_stored} messages ingested.`);
     } catch (err) {
+      setThreadPreview(null);
       setImportStatus(`Import failed: ${err.response?.data?.detail || err.message}`);
     }
     setIsImporting(false);
@@ -197,7 +224,12 @@ function CreateForm({ onCreated, workspaceId }) {
       return;
     }
     try {
-      const payload = { ...formData, target_persons: formData.target_persons.split(',').map(s => s.trim()) };
+      const payload = {
+        ...formData,
+        target_persons: isEmailThread
+          ? (formData.target_persons ? [formData.target_persons] : [])
+          : formData.target_persons.split(',').map(s => s.trim()).filter(Boolean)
+      };
       payload.due_date_time = new Date(payload.due_date_time).toISOString();
       await api.createFollowUp(payload);
       onCreated();
@@ -209,10 +241,12 @@ function CreateForm({ onCreated, workspaceId }) {
 
   return (
     <form className="card" onSubmit={handleSubmit}>
-      <h2 style={{ marginBottom: '1.5rem' }}>Create Manual Follow-up</h2>
+      <h2 style={{ marginBottom: '1.5rem' }}>
+        {isEmailThread ? 'Create Email Thread Follow-up' : 'Create Manual Follow-up'}
+      </h2>
       {!workspaceId && (
         <div style={{ background: 'rgba(255, 80, 80, 0.15)', border: '1px solid var(--danger)', padding: '0.75rem 1rem', borderRadius: '6px', marginBottom: '1.5rem', fontSize: '0.9rem', color: 'var(--danger)' }}>
-          ⚠️ You must be in a workspace to create a follow-up. Please create or join one first.
+          You must be in a workspace to create a follow-up. Please create or join one first.
         </div>
       )}
       <div className="form-group">
@@ -228,22 +262,35 @@ function CreateForm({ onCreated, workspaceId }) {
         <label>Source Reference (e.g. Thread ID)</label>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <input required type="text" className="form-control" value={formData.source_ref} onChange={e => setFormData({ ...formData, source_ref: e.target.value })} placeholder="Thread ID or Link" />
-          {formData.source_type === 'email' && (
+          {isEmailThread && (
             <button type="button" className="btn" style={{ whiteSpace: 'nowrap' }} disabled={isImporting} onClick={handleImport}>
-              {isImporting ? '⏳ Importing...' : '📥 Import Thread Context'}
+              {isImporting ? 'Importing...' : 'Import Thread Context'}
             </button>
           )}
         </div>
         {importStatus && <p style={{ fontSize: '12px', marginTop: '4px', color: importStatus.startsWith('Success') ? 'var(--primary)' : 'var(--danger)' }}>{importStatus}</p>}
       </div>
-      <div className="form-group">
-        <label>Ask Summary</label>
-        <input required type="text" className="form-control" value={formData.ask_summary} onChange={e => setFormData({ ...formData, ask_summary: e.target.value })} placeholder="E.g. Get Q3 Report" />
-      </div>
-      <div className="form-group">
-        <label>Target Email/Slack</label>
-        <input required type="text" className="form-control" value={formData.target_persons} onChange={e => setFormData({ ...formData, target_persons: e.target.value })} placeholder="alice@example.com" />
-      </div>
+      {isEmailThread ? (
+        <div style={{ marginBottom: '1.5rem', padding: '1rem', borderRadius: '10px', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
+          <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem' }}>Thread Details</h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '0.5rem' }}>
+            {threadPreview ? 'These values were extracted from the Gmail thread and will be used for drafting and sending.' : 'Import the Gmail thread context to auto-fill the recipient and ask summary.'}
+          </p>
+          <p><strong>Ask Summary:</strong> {formData.ask_summary || 'Will be inferred from the thread subject'}</p>
+          <p><strong>Target Email:</strong> {formData.target_persons || 'Will be inferred from the thread participants'}</p>
+        </div>
+      ) : (
+        <>
+          <div className="form-group">
+            <label>Ask Summary</label>
+            <input required type="text" className="form-control" value={formData.ask_summary} onChange={e => setFormData({ ...formData, ask_summary: e.target.value })} placeholder="E.g. Get Q3 Report" />
+          </div>
+          <div className="form-group">
+            <label>Target Email</label>
+            <input required type="text" className="form-control" value={formData.target_persons} onChange={e => setFormData({ ...formData, target_persons: e.target.value })} placeholder="alice@example.com" />
+          </div>
+        </>
+      )}
       <div className="form-group">
         <label>Due Date & Time</label>
         <input required type="datetime-local" className="form-control" value={formData.due_date_time} onChange={e => setFormData({ ...formData, due_date_time: e.target.value })} />
@@ -322,11 +369,204 @@ function ExplainModal({ data, onClose }) {
 
 import Login from './Login';
 
+const NAV_ITEMS = [
+  { key: 'pending', label: 'Pending', icon: 'P' },
+  { key: 'overdue', label: 'Overdue', icon: 'O' },
+  { key: 'escalations', label: 'Reports', icon: 'R' },
+  { key: 'active', label: 'Active', icon: 'A' },
+  { key: 'create', label: 'Create New', icon: '+' },
+  { key: 'profile', label: 'Profile', icon: 'U' },
+];
+
+function decodeTokenPayload() {
+  const token = localStorage.getItem('token');
+  if (!token) return {};
+  try {
+    const payload = token.split('.')[1];
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(window.atob(normalized));
+  } catch {
+    return {};
+  }
+}
+
+function getUserEmail() {
+  const payload = decodeTokenPayload();
+  return payload.email || payload.user_metadata?.email || payload.sub || 'Signed-in user';
+}
+
+function getInitial(value) {
+  return (value || 'U').trim().charAt(0).toUpperCase();
+}
+
+function EmptyState({ title, message, actionLabel, onAction }) {
+  return (
+    <div className="empty-state">
+      <div className="empty-icon">·</div>
+      <h3>{title}</h3>
+      <p>{message}</p>
+      {actionLabel && <button className="btn" onClick={onAction}>{actionLabel}</button>}
+    </div>
+  );
+}
+
+function AccountActionModal({ type, onClose, onLogout, workspaces, onJoinWorkspace }) {
+  const [joinCode, setJoinCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+
+  const submitJoin = async (e) => {
+    e.preventDefault();
+    if (!joinCode.trim()) return;
+    setBusy(true);
+    setMessage('');
+    try {
+      await onJoinWorkspace(joinCode.trim());
+      setMessage('Organisation joined. Refreshing workspace list...');
+      setJoinCode('');
+    } catch (err) {
+      setMessage(err.response?.data?.detail || err.message || 'Could not join organisation.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copyCode = async (code) => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setMessage('Join code copied.');
+    } catch {
+      setMessage('Could not copy join code.');
+    }
+  };
+
+  const titleMap = {
+    password: 'Change Password',
+    organisation: 'Change Organisation',
+    delete: 'Delete Account',
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content account-modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-title-row">
+          <h2>{titleMap[type]}</h2>
+          <button className="icon-button" onClick={onClose} aria-label="Close">×</button>
+        </div>
+
+        {type === 'password' && (
+          <div className="settings-panel">
+            <p className="muted-text">Password changes need a password-reset endpoint or Supabase reset flow wired into the frontend. This keeps the UI ready without changing the working backend.</p>
+            <button className="btn" onClick={() => setMessage('Password reset UI is ready; backend/auth action can be connected later.')}>Request Password Change</button>
+          </div>
+        )}
+
+        {type === 'organisation' && (
+          <div className="settings-panel">
+            <p className="muted-text">Current organisations available to this account.</p>
+            <div className="workspace-list">
+              {workspaces.map(ws => (
+                <div className="workspace-row" key={ws.id}>
+                  <div>
+                    <strong>{ws.name}</strong>
+                    <span>{ws.user_role || 'member'}</span>
+                  </div>
+                  {ws.join_code && <button className="btn btn-subtle" onClick={() => copyCode(ws.join_code)}>Copy Code</button>}
+                </div>
+              ))}
+              {workspaces.length === 0 && <p className="muted-text">No organisations found.</p>}
+            </div>
+            <form onSubmit={submitJoin} className="join-org-form">
+              <input className="form-control" value={joinCode} onChange={e => setJoinCode(e.target.value)} placeholder="Enter organisation join code" />
+              <button className="btn" disabled={busy}>{busy ? 'Joining...' : 'Join'}</button>
+            </form>
+          </div>
+        )}
+
+        {type === 'delete' && (
+          <div className="settings-panel danger-zone">
+            <p>Deleting an account is destructive and should be backed by a confirmed server-side auth flow. The UI action is intentionally not wired to delete anything yet.</p>
+            <button className="btn btn-danger" onClick={() => setMessage('Account deletion requires a backend endpoint before it can be enabled safely.')}>Request Account Deletion</button>
+          </div>
+        )}
+
+        {message && <p className="modal-message">{message}</p>}
+        <div className="modal-actions">
+          {type === 'delete' && <button className="btn btn-subtle" onClick={onLogout}>Logout Instead</button>}
+          <button className="btn btn-subtle" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProfilePage({ userEmail, gmailAccount, workspaces, adminWorkspace, onConnectGmail, onLogout, onOpenAction }) {
+  const activeWorkspace = workspaces[0];
+  return (
+    <div className="profile-page">
+      <section className="profile-hero panel">
+        <div className="profile-avatar large">{getInitial(userEmail)}</div>
+        <div>
+          <h2>{userEmail}</h2>
+          <p className="muted-text">Manage your account, organisation, and connected email workspace.</p>
+        </div>
+      </section>
+
+      <div className="profile-grid">
+        <section className="panel">
+          <div className="section-heading">
+            <h3>User Information</h3>
+            <span className="pill">Authenticated</span>
+          </div>
+          <div className="detail-list">
+            <div><span>Email</span><strong>{userEmail}</strong></div>
+            <div><span>Role</span><strong>{activeWorkspace?.user_role || 'Member'}</strong></div>
+            <div><span>Organisation</span><strong>{activeWorkspace?.name || 'Not joined'}</strong></div>
+          </div>
+        </section>
+
+        <section className="panel">
+          <div className="section-heading">
+            <h3>Gmail Connection</h3>
+            <span className={`pill ${gmailAccount?.send_enabled ? 'success' : ''}`}>{gmailAccount?.send_enabled ? 'Ready' : 'Needs Setup'}</span>
+          </div>
+          <div className="detail-list">
+            <div><span>Account</span><strong>{gmailAccount?.google_email || 'Not connected'}</strong></div>
+            <div><span>Send Access</span><strong>{gmailAccount?.send_enabled ? 'Enabled' : 'Not enabled'}</strong></div>
+          </div>
+          <button className="btn" onClick={onConnectGmail}>{gmailAccount?.connected ? 'Reconnect Gmail' : 'Connect Gmail'}</button>
+        </section>
+
+        <section className="panel">
+          <div className="section-heading">
+            <h3>Organisation</h3>
+            <span className="pill">{workspaces.length} workspace{workspaces.length === 1 ? '' : 's'}</span>
+          </div>
+          <div className="detail-list">
+            <div><span>Current</span><strong>{activeWorkspace?.name || 'None'}</strong></div>
+            <div><span>Admin Access</span><strong>{adminWorkspace ? adminWorkspace.name : 'No admin workspace'}</strong></div>
+          </div>
+          <button className="btn btn-subtle" onClick={() => onOpenAction('organisation')}>Change Organisation</button>
+        </section>
+
+        <section className="panel account-actions-panel">
+          <h3>Account Actions</h3>
+          <button className="btn btn-subtle" onClick={() => onOpenAction('password')}>Change Password</button>
+          <button className="btn btn-subtle" onClick={() => onOpenAction('organisation')}>Change Organisation</button>
+          <button className="btn btn-danger" onClick={() => onOpenAction('delete')}>Delete Account</button>
+          <button className="btn btn-subtle" onClick={onLogout}>Logout</button>
+        </section>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState('pending');
   const [items, setItems] = useState([]);
   const [explainData, setExplainData] = useState(null);
   const [reportData, setReportData] = useState(null);
+  const [navCounts, setNavCounts] = useState({});
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('token'));
   const [myWorkspaces, setMyWorkspaces] = useState([]);
   const [adminWorkspace, setAdminWorkspace] = useState(null);
@@ -341,10 +581,50 @@ function App() {
   const [viewDoc, setViewDoc] = useState(null);
   const [docContent, setDocContent] = useState('');
   const [docContentLoading, setDocContentLoading] = useState(false);
+  const [gmailAccount, setGmailAccount] = useState(null);
+  const [accountAction, setAccountAction] = useState(null);
+  const userEmail = getUserEmail();
 
   const handleLogout = () => {
     localStorage.removeItem('token');
     setIsAuthenticated(false);
+  };
+
+  const loadGmailStatus = async () => {
+    try {
+      const res = await api.getGmailStatus();
+      setGmailAccount(res.data);
+    } catch (err) {
+      console.error('Failed to load Gmail connection status', err);
+    }
+  };
+
+  const handleConnectGmail = async () => {
+    try {
+      const res = await api.getGmailConnectUrl(window.location.origin);
+      window.location.href = res.data.url;
+    } catch (err) {
+      alert('Failed to start Gmail connection: ' + (err.response?.data?.detail || err.message));
+    }
+  };
+
+  const loadNavigationCounts = async () => {
+    try {
+      const [pendingRes, overdueRes, activeRes, reportRes] = await Promise.all([
+        api.getPending(),
+        api.getOverdue(),
+        api.getActive(),
+        api.getReport(),
+      ]);
+      setNavCounts({
+        pending: pendingRes.data.length,
+        overdue: overdueRes.data.length,
+        active: activeRes.data.length,
+        escalations: reportRes.data.escalations?.length || 0,
+      });
+    } catch (err) {
+      console.error('Failed to load navigation counts', err);
+    }
   };
 
   const loadOrgDocs = async () => {
@@ -361,7 +641,7 @@ function App() {
     const file = e.target.files?.[0];
     if (!file) return;
     setDocUploading(true);
-    setDocUploadStatus('Uploading and generating embeddings…');
+    setDocUploadStatus('Uploading and generating embeddings...');
     try {
       const form = new FormData();
       form.append('file', file);
@@ -369,10 +649,10 @@ function App() {
       form.append('tags', docTags);
       form.append('workspace_id', adminWorkspace?.id || '');
       const res = await api.uploadOrgDocument(form);
-      setDocUploadStatus(`✅ "${res.data.filename}" ingested — ${res.data.chunks_stored} chunks stored.`);
+      setDocUploadStatus(`Success: "${res.data.filename}" ingested, ${res.data.chunks_stored} chunks stored.`);
       await loadOrgDocs();
     } catch (err) {
-      setDocUploadStatus(`❌ Upload failed: ${err.response?.data?.detail || err.message}`);
+      setDocUploadStatus(`Upload failed: ${err.response?.data?.detail || err.message}`);
     } finally {
       setDocUploading(false);
       e.target.value = ''; // reset file input
@@ -383,10 +663,10 @@ function App() {
     if (!window.confirm(`Delete "${filename}" and all its chunks from the knowledge base?`)) return;
     try {
       const res = await api.deleteOrgDocument(filename, adminWorkspace.id);
-      setDocUploadStatus(`✅ "${filename}" deleted (${res.data.chunks_deleted} chunks removed).`);
+      setDocUploadStatus(`Success: "${filename}" deleted (${res.data.chunks_deleted} chunks removed).`);
       await loadOrgDocs();
     } catch (err) {
-      setDocUploadStatus(`❌ Delete failed: ${err.response?.data?.detail || err.message}`);
+      setDocUploadStatus(`Delete failed: ${err.response?.data?.detail || err.message}`);
     }
   };
 
@@ -424,6 +704,10 @@ function App() {
   const loadData = async () => {
     if (!isAuthenticated) return;
     try {
+      if (!gmailAccount) {
+        await loadGmailStatus();
+      }
+
       // Always ensure we have workspace info
       if (myWorkspaces.length === 0) {
         const wsRes = await api.getMyWorkspaces();
@@ -433,6 +717,8 @@ function App() {
           setAdminWorkspace(adminWs);
         }
       }
+
+      await loadNavigationCounts();
 
       if (activeTab === 'active') {
         const res = await api.getActive();
@@ -460,6 +746,17 @@ function App() {
       console.error(err);
     }
   };
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('gmail_connected')) {
+      loadGmailStatus();
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (params.get('gmail_error')) {
+      alert('Gmail connection failed: ' + params.get('gmail_error'));
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
 
   useEffect(() => {
     loadData();
@@ -520,50 +817,86 @@ function App() {
     }
   };
 
+  const handleJoinWorkspaceFromProfile = async (joinCode) => {
+    await api.joinWorkspace(joinCode);
+    const wsRes = await api.getMyWorkspaces();
+    setMyWorkspaces(wsRes.data);
+    const adminWs = wsRes.data.find(w => w.user_role === 'admin');
+    setAdminWorkspace(adminWs || null);
+    await loadNavigationCounts();
+  };
+
   if (!isAuthenticated) {
     return <Login onLoginSuccess={() => setIsAuthenticated(true)} />;
   }
 
+  const visibleNavItems = adminWorkspace
+    ? [...NAV_ITEMS, { key: 'admin', label: 'Admin', icon: 'M' }]
+    : NAV_ITEMS;
+  const activeNav = visibleNavItems.find(item => item.key === activeTab);
+  const pageSubtitle = {
+    pending: 'Items waiting for action, approval, or reply detection.',
+    overdue: 'Follow-ups whose due time has passed.',
+    escalations: 'Final-stage items that need manual attention.',
+    active: 'All non-closed follow-up work currently in motion.',
+    create: 'Create a manual follow-up or connect one to an email thread.',
+    admin: 'Manage workspace members and organisation knowledge.',
+    profile: 'Manage your account, Gmail connection, and organisation settings.',
+  }[activeTab];
+
   return (
-    <div className="app-container">
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <h1>Follow-Up Agent</h1>
-          <p style={{ color: 'var(--text-muted)', marginTop: '0.5rem' }}>Your semantic assistant for zero-chase execution.</p>
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="brand-block">
+          <div className="brand-mark">F</div>
+          <div>
+            <h1>Follow-Up Agent</h1>
+            <p>Execution cockpit</p>
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-          {myWorkspaces.length > 0 && (
-            <div className="org-badge">
-              <div className="org-code-wrapper">
-                <div className="org-name">{myWorkspaces[0].name}</div>
-                <div className="org-code">{myWorkspaces[0].join_code}</div>
-              </div>
-              <div className="org-badge-icon">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                  <circle cx="9" cy="7" r="4"></circle>
-                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                  <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                </svg>
-              </div>
-            </div>
-          )}
-          <button className="btn btn-danger" onClick={handleLogout}>Logout</button>
+
+        <nav className="side-nav">
+          {visibleNavItems.map(item => (
+            <button
+              key={item.key}
+              className={`side-nav-btn ${activeTab === item.key ? 'active' : ''}`}
+              onClick={() => setActiveTab(item.key)}
+            >
+              <span className="nav-icon">{item.icon}</span>
+              <span>{item.label}</span>
+              {navCounts[item.key] !== undefined && <strong>{navCounts[item.key]}</strong>}
+            </button>
+          ))}
+        </nav>
+
+        <div className="sidebar-footer">
+          <span>Workspace</span>
+          <strong>{myWorkspaces[0]?.name || 'No workspace'}</strong>
+          {myWorkspaces[0]?.join_code && <small>{myWorkspaces[0].join_code}</small>}
         </div>
-      </header>
+      </aside>
 
-      <div className="tabs">
-        <button className={`tab-btn ${activeTab === 'pending' ? 'active' : ''}`} onClick={() => setActiveTab('pending')}>Pending</button>
-        <button className={`tab-btn ${activeTab === 'overdue' ? 'active' : ''}`} onClick={() => setActiveTab('overdue')}>Overdue</button>
-        <button className={`tab-btn ${activeTab === 'escalations' ? 'active' : ''}`} onClick={() => setActiveTab('escalations')}>Report & Escalations</button>
-        <button className={`tab-btn ${activeTab === 'active' ? 'active' : ''}`} onClick={() => setActiveTab('active')}>Active Follow-Ups</button>
-        <button className={`tab-btn ${activeTab === 'create' ? 'active' : ''}`} onClick={() => setActiveTab('create')}>+ Create New</button>
-        {adminWorkspace && (
-          <button className={`tab-btn ${activeTab === 'admin' ? 'active' : ''}`} style={{ borderLeft: '1px solid rgba(255,255,255,0.1)', marginLeft: '0.5rem', paddingLeft: '1.5rem', color: 'var(--primary)' }} onClick={() => setActiveTab('admin')}>Admin Panel</button>
-        )}
-      </div>
+      <div className="main-shell">
+        <header className="topbar">
+          <div>
+            <h2>{activeNav?.label || 'Dashboard'}</h2>
+            <p>{pageSubtitle}</p>
+          </div>
+          <div className="topbar-actions">
+            <button className={`gmail-chip ${gmailAccount?.send_enabled ? 'connected' : ''}`} onClick={handleConnectGmail}>
+              <span />
+              {gmailAccount?.connected
+                ? (gmailAccount.send_enabled ? gmailAccount.google_email : 'Reconnect Gmail')
+                : 'Connect Gmail'}
+            </button>
+            <button className="profile-chip" onClick={() => setActiveTab('profile')}>
+              <span className="profile-avatar">{getInitial(userEmail)}</span>
+              <span>{userEmail}</span>
+            </button>
+          </div>
+        </header>
 
-      <main>
+        <main className="content-area">
         {['active', 'pending', 'overdue'].includes(activeTab) && (
           <div className="grid">
             {items.map(item => (
@@ -578,21 +911,28 @@ function App() {
                 onReschedule={handleReschedule}
               />
             ))}
-            {items.length === 0 && <p style={{ color: 'var(--text-muted)' }}>No {activeTab} follow-ups.</p>}
+            {items.length === 0 && (
+              <EmptyState
+                title={`No ${activeTab} follow-ups`}
+                message="Everything in this lane is clear right now."
+                actionLabel="Create Follow-Up"
+                onAction={() => setActiveTab('create')}
+              />
+            )}
           </div>
         )}
 
         {activeTab === 'create' && (
-          <div style={{ maxWidth: '600px' }}>
+          <div className="form-page">
             <CreateForm onCreated={() => { setActiveTab('pending'); loadData(); }} workspaceId={myWorkspaces[0]?.id} />
           </div>
         )}
 
         {activeTab === 'escalations' && reportData && (
           <div>
-            <div className="card" style={{ marginBottom: '2rem', borderLeft: '4px solid var(--warning)' }}>
+            <div className="status-panel">
               <h3>Status Check</h3>
-              <p style={{ marginTop: '0.5rem', color: 'var(--text-muted)' }}>{reportData.blocking_you_summary}</p>
+              <p>{reportData.blocking_you_summary}</p>
             </div>
             <h2>Escalated Items</h2>
             <div className="grid" style={{ marginTop: '1.5rem' }}>
@@ -607,13 +947,32 @@ function App() {
                   onModify={handleModify}
                 />
               ))}
-              {reportData.escalations.length === 0 && <p style={{ color: 'var(--text-muted)' }}>No escalations currently.</p>}
+              {reportData.escalations.length === 0 && (
+                <EmptyState
+                  title="No escalations currently"
+                  message="No item has reached the final escalation stage."
+                  actionLabel="View Active"
+                  onAction={() => setActiveTab('active')}
+                />
+              )}
             </div>
           </div>
         )}
 
+        {activeTab === 'profile' && (
+          <ProfilePage
+            userEmail={userEmail}
+            gmailAccount={gmailAccount}
+            workspaces={myWorkspaces}
+            adminWorkspace={adminWorkspace}
+            onConnectGmail={handleConnectGmail}
+            onLogout={handleLogout}
+            onOpenAction={setAccountAction}
+          />
+        )}
+
         {activeTab === 'admin' && adminWorkspace && (
-          <div style={{ maxWidth: '800px' }}>
+          <div className="admin-page">
             <h2 style={{ marginBottom: '1.5rem' }}>Workspace Administration: {adminWorkspace.name}</h2>
 
             <div className="card" style={{ marginBottom: '2rem' }}>
@@ -729,7 +1088,7 @@ function App() {
                       padding: '0.55rem 1.1rem',
                     }}
                   >
-                    {docUploading ? '⏳ Processing…' : '📄 Upload Document'}
+                  {docUploading ? 'Processing...' : 'Upload Document'}
                   </label>
                   <input
                     id="org-doc-upload"
@@ -746,7 +1105,7 @@ function App() {
                 <p style={{
                   fontSize: '0.85rem',
                   marginBottom: '1rem',
-                  color: docUploadStatus.startsWith('✅') ? 'var(--success, #10b981)' : 'var(--danger)'
+                  color: docUploadStatus.startsWith('Success') ? 'var(--success, #10b981)' : 'var(--danger)'
                 }}>
                   {docUploadStatus}
                 </p>
@@ -770,10 +1129,10 @@ function App() {
                     <tbody>
                       {orgDocs.map((doc, idx) => (
                         <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                          <td style={{ padding: '0.6rem 1rem', fontWeight: 500 }}>📄 {doc.filename}</td>
+                          <td style={{ padding: '0.6rem 1rem', fontWeight: 500 }}>{doc.filename}</td>
                           <td style={{ padding: '0.6rem 1rem', color: 'var(--text-muted)' }}>{doc.doc_type}</td>
                           <td style={{ padding: '0.6rem 1rem', color: 'var(--text-muted)' }}>
-                            {doc.tags?.length > 0 ? doc.tags.join(', ') : '—'}
+                            {doc.tags?.length > 0 ? doc.tags.join(', ') : '-'}
                           </td>
                           <td style={{ padding: '0.6rem 1rem', textAlign: 'right', color: 'var(--primary)' }}>{doc.chunks}</td>
                           <td style={{ padding: '0.6rem 1rem', textAlign: 'right', display: 'flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
@@ -781,17 +1140,17 @@ function App() {
                               className="btn"
                               style={{ padding: '0.2rem 0.6rem', fontSize: '0.8rem', background: 'rgba(255,255,255,0.07)' }}
                               onClick={() => setViewDoc(doc)}
-                            >👁 View</button>
+                            >View</button>
                             <button
                               className="btn"
                               style={{ padding: '0.2rem 0.6rem', fontSize: '0.8rem', background: 'rgba(16,185,129,0.15)', color: 'var(--success)', border: '1px solid rgba(16,185,129,0.25)' }}
                               onClick={() => handleDownloadDoc(doc.filename)}
-                            >⬇ Download</button>
+                            >Download</button>
                             <button
                               className="btn btn-danger"
                               style={{ padding: '0.2rem 0.6rem', fontSize: '0.8rem' }}
                               onClick={() => handleDeleteDoc(doc.filename)}
-                            >🗑 Delete</button>
+                            >Delete</button>
                           </td>
                         </tr>
                       ))}
@@ -802,10 +1161,21 @@ function App() {
             </div>
           </div>
         )}
-      </main>
+        </main>
+      </div>
 
       {explainData && (
         <ExplainModal data={explainData} onClose={() => setExplainData(null)} />
+      )}
+
+      {accountAction && (
+        <AccountActionModal
+          type={accountAction}
+          onClose={() => setAccountAction(null)}
+          onLogout={handleLogout}
+          workspaces={myWorkspaces}
+          onJoinWorkspace={handleJoinWorkspaceFromProfile}
+        />
       )}
 
       {viewDoc && (
@@ -814,7 +1184,7 @@ function App() {
 
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
-              <h3 style={{ fontSize: '1.1rem', margin: 0 }}>📄 {viewDoc.filename}</h3>
+              <h3 style={{ fontSize: '1.1rem', margin: 0 }}>{viewDoc.filename}</h3>
               <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                 <span style={{ padding: '0.2rem 0.6rem', borderRadius: '4px', fontSize: '0.78rem', background: 'rgba(99,102,241,0.2)', color: 'var(--primary)' }}>{viewDoc.doc_type}</span>
                 {viewDoc.tags?.map(t => (
@@ -824,7 +1194,7 @@ function App() {
             </div>
 
             <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
-              {viewDoc.chunks} chunk{viewDoc.chunks !== 1 ? 's' : ''} — extracted text stored for semantic retrieval
+              {viewDoc.chunks} chunk{viewDoc.chunks !== 1 ? 's' : ''} - extracted text stored for semantic retrieval
             </p>
 
             {/* Content area */}
@@ -834,7 +1204,7 @@ function App() {
               padding: '1rem', marginBottom: '1.25rem', minHeight: '180px',
             }}>
               {docContentLoading ? (
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Loading…</p>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Loading...</p>
               ) : (
                 <pre style={{
                   margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
@@ -846,8 +1216,8 @@ function App() {
 
             {/* Actions */}
             <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-              <button className="btn btn-danger" onClick={() => { handleDeleteDoc(viewDoc.filename); setViewDoc(null); }}>🗑 Delete</button>
-              <button className="btn" style={{ background: 'rgba(16,185,129,0.15)', color: 'var(--success)', border: '1px solid rgba(16,185,129,0.3)' }} onClick={() => handleDownloadDoc(viewDoc.filename)}>⬇ Download</button>
+              <button className="btn btn-danger" onClick={() => { handleDeleteDoc(viewDoc.filename); setViewDoc(null); }}>Delete</button>
+              <button className="btn" style={{ background: 'rgba(16,185,129,0.15)', color: 'var(--success)', border: '1px solid rgba(16,185,129,0.3)' }} onClick={() => handleDownloadDoc(viewDoc.filename)}>Download</button>
               <button className="btn" style={{ background: 'rgba(255,255,255,0.07)' }} onClick={() => setViewDoc(null)}>Close</button>
             </div>
           </div>

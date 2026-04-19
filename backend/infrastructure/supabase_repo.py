@@ -4,7 +4,7 @@ from typing import List, Optional, Any
 from uuid import UUID
 from datetime import datetime
 from dotenv import load_dotenv
-from domain.models import FollowUpEntity, FollowUpEvent
+from domain.models import FollowUpEntity, FollowUpEvent, EntityStatus
 
 # Load the .env from the backend directory regardless of where uvicorn is launched
 env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
@@ -69,6 +69,38 @@ class SupabaseRepository:
             query = query.eq('created_by_user_id', user_id)
         response = query.execute()
         return [FollowUpEntity(**row) for row in response.data]
+
+    @staticmethod
+    def find_active_duplicate(
+        *,
+        user_id: str,
+        workspace_id: str,
+        source_type: str,
+        source_ref: str,
+    ) -> Optional[FollowUpEntity]:
+        active_statuses = [
+            EntityStatus.created.value,
+            EntityStatus.waiting.value,
+            EntityStatus.draft_ready.value,
+            EntityStatus.awaiting_approval.value,
+            EntityStatus.sent.value,
+            EntityStatus.followed_up_1.value,
+            EntityStatus.followed_up_2.value,
+        ]
+        response = (
+            supabase.table('follow_ups')
+            .select('*')
+            .eq('created_by_user_id', user_id)
+            .eq('workspace_id', workspace_id)
+            .eq('source_type', source_type)
+            .eq('source_ref', source_ref)
+            .in_('status', active_statuses)
+            .limit(1)
+            .execute()
+        )
+        if not response.data:
+            return None
+        return FollowUpEntity(**response.data[0])
         
     @staticmethod
     def log_event(event: FollowUpEvent) -> FollowUpEvent:

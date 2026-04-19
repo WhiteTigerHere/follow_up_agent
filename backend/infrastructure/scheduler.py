@@ -35,6 +35,7 @@ class Scheduler:
         
         from .graph import orchestrator
         from .reply_detector import check_for_reply
+        from .gmail_gateway import check_target_reply_after_outbound
 
         for entity in entities:
             try:
@@ -44,13 +45,24 @@ class Scheduler:
                     and entity.next_follow_up_at.replace(tzinfo=None) <= now
                 )
                 if is_escalation_due:
+                    reply_info = check_for_reply(entity.source_ref, entity.last_sent_at, entity.created_by_user_id) if entity.last_sent_at else {"reply_detected": False}
+                    if reply_info.get("reply_detected"):
+                        entity = transition_state(entity, EntityStatus.draft_ready)
+                        entity.next_follow_up_at = None
+                        entity.current_draft = "[REPLY_DETECTED] Normal reply found."
+                        self.save_and_log(
+                            entity,
+                            f"Normal reply detected in thread: {entity.source_ref}. Waiting for user acknowledgment.",
+                            {"reply_info": reply_info}
+                        )
+                        continue
                     entity = transition_state(entity, EntityStatus.escalated)
                     entity.next_follow_up_at = None
                     self.save_and_log(entity, "Escalated after max attempts")
                     continue
 
                 if entity.last_sent_at and entity.status in [EntityStatus.sent, EntityStatus.followed_up_1]:
-                    reply_info = check_for_reply(entity.source_ref, entity.last_sent_at)
+                    reply_info = check_for_reply(entity.source_ref, entity.last_sent_at, entity.created_by_user_id)
                     if reply_info.get("reply_detected"):
                         if reply_info.get("reply_type") == "ooo":
                             # OOO reply: show an acknowledgement card rather than sending more follow-ups.
@@ -60,12 +72,34 @@ class Scheduler:
                             continue
                         else:
                             entity = transition_state(entity, EntityStatus.draft_ready)
+                            entity.next_follow_up_at = None
                             entity.current_draft = "[REPLY_DETECTED] Normal reply found."
-                            self.save_and_log(entity, f"Normal reply detected in thread: {entity.source_ref}. Waiting for user acknowledgment.")
+                            self.save_and_log(
+                                entity,
+                                f"Normal reply detected in thread: {entity.source_ref}. Waiting for user acknowledgment.",
+                                {"reply_info": reply_info}
+                            )
                             continue
 
                 is_initial_due = (entity.status == EntityStatus.waiting and entity.due_at and entity.due_at.replace(tzinfo=None) <= now)
                 is_followup_due = (entity.status in [EntityStatus.sent, EntityStatus.followed_up_1] and entity.next_follow_up_at and entity.next_follow_up_at.replace(tzinfo=None) <= now)
+
+                if is_initial_due and entity.source_type.value == "email":
+                    reply_info = check_target_reply_after_outbound(
+                        entity.source_ref,
+                        entity.created_by_user_id,
+                        entity.target_contact
+                    )
+                    if reply_info.get("reply_detected"):
+                        entity = transition_state(entity, EntityStatus.draft_ready)
+                        entity.next_follow_up_at = None
+                        entity.current_draft = "[REPLY_DETECTED] Normal reply found."
+                        self.save_and_log(
+                            entity,
+                            f"Normal reply detected in thread: {entity.source_ref}. Waiting for user acknowledgment.",
+                            {"reply_info": reply_info}
+                        )
+                        continue
 
                 if is_initial_due or is_followup_due:
                     # Log explicitly as requested: { reason: "due_time_reached", action: "generate_draft" }
