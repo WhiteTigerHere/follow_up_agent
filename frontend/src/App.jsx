@@ -254,8 +254,8 @@ function CreateForm({ onCreated, workspaceId }) {
         <select className="form-control" value={formData.source_type} onChange={e => setFormData({ ...formData, source_type: e.target.value })}>
           <option value="manual">Manual</option>
           <option value="email">Email Thread</option>
-          <option value="task">Task / Ticket</option>
-          <option value="meeting">Meeting</option>
+          {/* <option value="task">Task / Ticket</option>
+          <option value="meeting">Meeting</option> */}
         </select>
       </div>
       <div className="form-group">
@@ -372,7 +372,7 @@ import Login from './Login';
 const NAV_ITEMS = [
   { key: 'pending', label: 'Pending', icon: 'P' },
   { key: 'overdue', label: 'Overdue', icon: 'O' },
-  { key: 'escalations', label: 'Reports', icon: 'R' },
+  { key: 'escalations', label: 'Escalations', icon: 'E' },
   { key: 'active', label: 'Active', icon: 'A' },
   { key: 'create', label: 'Create New', icon: '+' },
   { key: 'profile', label: 'Profile', icon: 'U' },
@@ -897,46 +897,9 @@ function App() {
         </header>
 
         <main className="content-area">
-        {['active', 'pending', 'overdue'].includes(activeTab) && (
-          <div className="grid">
-            {items.map(item => (
-              <FollowUpCard
-                key={item.id}
-                item={item}
-                onApprove={handleApprove}
-                onClose={handleClose}
-                onExplain={handleExplain}
-                onReject={handleReject}
-                onModify={handleModify}
-                onReschedule={handleReschedule}
-              />
-            ))}
-            {items.length === 0 && (
-              <EmptyState
-                title={`No ${activeTab} follow-ups`}
-                message="Everything in this lane is clear right now."
-                actionLabel="Create Follow-Up"
-                onAction={() => setActiveTab('create')}
-              />
-            )}
-          </div>
-        )}
-
-        {activeTab === 'create' && (
-          <div className="form-page">
-            <CreateForm onCreated={() => { setActiveTab('pending'); loadData(); }} workspaceId={myWorkspaces[0]?.id} />
-          </div>
-        )}
-
-        {activeTab === 'escalations' && reportData && (
-          <div>
-            <div className="status-panel">
-              <h3>Status Check</h3>
-              <p>{reportData.blocking_you_summary}</p>
-            </div>
-            <h2>Escalated Items</h2>
-            <div className="grid" style={{ marginTop: '1.5rem' }}>
-              {reportData.escalations.map(item => (
+          {['active', 'pending', 'overdue'].includes(activeTab) && (
+            <div className="grid">
+              {items.map(item => (
                 <FollowUpCard
                   key={item.id}
                   item={item}
@@ -945,222 +908,259 @@ function App() {
                   onExplain={handleExplain}
                   onReject={handleReject}
                   onModify={handleModify}
+                  onReschedule={handleReschedule}
                 />
               ))}
-              {reportData.escalations.length === 0 && (
+              {items.length === 0 && (
                 <EmptyState
-                  title="No escalations currently"
-                  message="No item has reached the final escalation stage."
-                  actionLabel="View Active"
-                  onAction={() => setActiveTab('active')}
+                  title={`No ${activeTab} follow-ups`}
+                  message="Everything in this lane is clear right now."
+                  actionLabel="Create Follow-Up"
+                  onAction={() => setActiveTab('create')}
                 />
               )}
             </div>
-          </div>
-        )}
+          )}
 
-        {activeTab === 'profile' && (
-          <ProfilePage
-            userEmail={userEmail}
-            gmailAccount={gmailAccount}
-            workspaces={myWorkspaces}
-            adminWorkspace={adminWorkspace}
-            onConnectGmail={handleConnectGmail}
-            onLogout={handleLogout}
-            onOpenAction={setAccountAction}
-          />
-        )}
-
-        {activeTab === 'admin' && adminWorkspace && (
-          <div className="admin-page">
-            <h2 style={{ marginBottom: '1.5rem' }}>Workspace Administration: {adminWorkspace.name}</h2>
-
-            <div className="card" style={{ marginBottom: '2rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <h3 style={{ color: 'var(--primary)' }}>Organization Join Code</h3>
-                  <p style={{ color: 'var(--text-muted)', marginTop: '0.5rem', fontSize: '0.9rem' }}>Share this code with your team members so they can join this workspace.</p>
-                </div>
-                <div style={{ background: 'rgba(255,255,255,0.05)', padding: '0.75rem 1.5rem', borderRadius: '8px', fontSize: '1.5rem', letterSpacing: '2px', fontWeight: 'bold' }}>
-                  {adminWorkspace.join_code}
-                </div>
-              </div>
+          {activeTab === 'create' && (
+            <div className="form-page">
+              <CreateForm onCreated={() => { setActiveTab('pending'); loadData(); }} workspaceId={myWorkspaces[0]?.id} />
             </div>
+          )}
 
-            {/* Users table — role can be changed inline */}
-            <div className="card" style={{ marginBottom: '2rem' }}>
-              <h3 style={{ marginBottom: '1.5rem' }}>Members</h3>
-              <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-muted)' }}>
-                    <th style={{ padding: '0.5rem 0', width: '50px' }}>#</th>
-                    <th style={{ padding: '0.5rem 0' }}>Email</th>
-                    <th style={{ padding: '0.5rem 0' }}>Current Role</th>
-                    <th style={{ padding: '0.5rem 0', textAlign: 'right' }}>Change Role</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {workspaceMembers.map((member, index) => (
-                    <tr key={member.user_id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                      <td style={{ padding: '0.75rem 0', color: 'var(--text-muted)' }}>{index + 1}</td>
-                      <td style={{ padding: '0.75rem 0', fontWeight: '500' }}>{member.email || member.user_id}</td>
-                      <td style={{ padding: '0.75rem 0' }}>
-                        <span style={{ padding: '0.2rem 0.6rem', borderRadius: '4px', fontSize: '0.8rem', background: member.role === 'admin' ? 'rgba(88,166,255,0.15)' : 'rgba(255,255,255,0.08)', color: member.role === 'admin' ? 'var(--primary)' : 'var(--text-muted)' }}>
-                          {member.role}
-                        </span>
-                      </td>
-                      <td style={{ padding: '0.75rem 0', textAlign: 'right', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                        <select
-                          className="form-control"
-                          style={{ width: '110px', padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}
-                          value={addMemberRole}
-                          onChange={e => setAddMemberRole(e.target.value)}
-                        >
-                          <option value="user">user</option>
-                          <option value="admin">admin</option>
-                        </select>
-                        <button
-                          className="btn"
-                          style={{ padding: '0.25rem 0.6rem', fontSize: '0.8rem' }}
-                          onClick={async () => {
-                            try {
-                              await api.addWorkspaceMember(adminWorkspace.id, member.email, addMemberRole);
-                              await loadData();
-                            } catch (err) {
-                              alert('Role change failed: ' + (err.response?.data?.detail || err.message));
-                            }
-                          }}
-                        >Apply</button>
-                        <button className="btn btn-danger" style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }} onClick={() => handleRemoveMember(member.user_id)}>Remove</button>
-                      </td>
-                    </tr>
-                  ))}
-                  {workspaceMembers.length === 0 && (
-                    <tr><td colSpan="4" style={{ padding: '1rem 0', textAlign: 'center', color: 'var(--text-muted)' }}>No members yet.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="card" style={{ borderLeft: '4px solid var(--primary)' }}>
-              <h3>Organization RAG Pipeline</h3>
-              <p style={{ marginTop: '0.5rem', color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
-                Upload brand guidelines, tone-of-voice documents, and product context.
-                The Follow-up Agent will use this knowledge for every draft generated in this workspace.
-              </p>
-
-              {/* Upload controls */}
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'flex-end', marginBottom: '1rem' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Document Type</label>
-                  <select
-                    className="form-control"
-                    style={{ width: '140px' }}
-                    value={docType}
-                    onChange={e => setDocType(e.target.value)}
-                  >
-                    <option value="general">General</option>
-                    <option value="policy">Policy</option>
-                    <option value="guide">Guide</option>
-                    <option value="tone">Tone of Voice</option>
-                    <option value="product">Product Context</option>
-                  </select>
-                </div>
-                <div style={{ flex: 1, minWidth: '160px' }}>
-                  <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Tags (comma-separated)</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    placeholder="e.g. hr, onboarding"
-                    value={docTags}
-                    onChange={e => setDocTags(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label
-                    htmlFor="org-doc-upload"
-                    className="btn"
-                    style={{
-                      display: 'inline-block',
-                      cursor: docUploading ? 'not-allowed' : 'pointer',
-                      opacity: docUploading ? 0.6 : 1,
-                      background: 'var(--primary)',
-                      padding: '0.55rem 1.1rem',
-                    }}
-                  >
-                  {docUploading ? 'Processing...' : 'Upload Document'}
-                  </label>
-                  <input
-                    id="org-doc-upload"
-                    type="file"
-                    accept=".pdf,.txt,.md"
-                    style={{ display: 'none' }}
-                    disabled={docUploading}
-                    onChange={handleOrgDocUpload}
-                  />
-                </div>
+          {activeTab === 'escalations' && reportData && (
+            <div>
+              <div className="status-panel">
+                <h3>Status Check</h3>
+                <p>{reportData.blocking_you_summary}</p>
               </div>
-
-              {docUploadStatus && (
-                <p style={{
-                  fontSize: '0.85rem',
-                  marginBottom: '1rem',
-                  color: docUploadStatus.startsWith('Success') ? 'var(--success, #10b981)' : 'var(--danger)'
-                }}>
-                  {docUploadStatus}
-                </p>
-              )}
-
-              {/* Document list */}
-              <div style={{ marginTop: '0.5rem', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', overflow: 'hidden' }}>
-                {orgDocs.length === 0 ? (
-                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textAlign: 'center', padding: '1rem' }}>No documents uploaded yet.</p>
-                ) : (
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-muted)' }}>
-                        <th style={{ padding: '0.6rem 1rem', textAlign: 'left' }}>Filename</th>
-                        <th style={{ padding: '0.6rem 1rem', textAlign: 'left' }}>Type</th>
-                        <th style={{ padding: '0.6rem 1rem', textAlign: 'left' }}>Tags</th>
-                        <th style={{ padding: '0.6rem 1rem', textAlign: 'right' }}>Chunks</th>
-                        <th style={{ padding: '0.6rem 1rem', textAlign: 'right' }}>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {orgDocs.map((doc, idx) => (
-                        <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                          <td style={{ padding: '0.6rem 1rem', fontWeight: 500 }}>{doc.filename}</td>
-                          <td style={{ padding: '0.6rem 1rem', color: 'var(--text-muted)' }}>{doc.doc_type}</td>
-                          <td style={{ padding: '0.6rem 1rem', color: 'var(--text-muted)' }}>
-                            {doc.tags?.length > 0 ? doc.tags.join(', ') : '-'}
-                          </td>
-                          <td style={{ padding: '0.6rem 1rem', textAlign: 'right', color: 'var(--primary)' }}>{doc.chunks}</td>
-                          <td style={{ padding: '0.6rem 1rem', textAlign: 'right', display: 'flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
-                            <button
-                              className="btn"
-                              style={{ padding: '0.2rem 0.6rem', fontSize: '0.8rem', background: 'rgba(255,255,255,0.07)' }}
-                              onClick={() => setViewDoc(doc)}
-                            >View</button>
-                            <button
-                              className="btn"
-                              style={{ padding: '0.2rem 0.6rem', fontSize: '0.8rem', background: 'rgba(16,185,129,0.15)', color: 'var(--success)', border: '1px solid rgba(16,185,129,0.25)' }}
-                              onClick={() => handleDownloadDoc(doc.filename)}
-                            >Download</button>
-                            <button
-                              className="btn btn-danger"
-                              style={{ padding: '0.2rem 0.6rem', fontSize: '0.8rem' }}
-                              onClick={() => handleDeleteDoc(doc.filename)}
-                            >Delete</button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              <h2>Escalated Items</h2>
+              <div className="grid" style={{ marginTop: '1.5rem' }}>
+                {reportData.escalations.map(item => (
+                  <FollowUpCard
+                    key={item.id}
+                    item={item}
+                    onApprove={handleApprove}
+                    onClose={handleClose}
+                    onExplain={handleExplain}
+                    onReject={handleReject}
+                    onModify={handleModify}
+                  />
+                ))}
+                {reportData.escalations.length === 0 && (
+                  <EmptyState
+                    title="No escalations currently"
+                    message="No item has reached the final escalation stage."
+                    actionLabel="View Active"
+                    onAction={() => setActiveTab('active')}
+                  />
                 )}
               </div>
             </div>
-          </div>
-        )}
+          )}
+
+          {activeTab === 'profile' && (
+            <ProfilePage
+              userEmail={userEmail}
+              gmailAccount={gmailAccount}
+              workspaces={myWorkspaces}
+              adminWorkspace={adminWorkspace}
+              onConnectGmail={handleConnectGmail}
+              onLogout={handleLogout}
+              onOpenAction={setAccountAction}
+            />
+          )}
+
+          {activeTab === 'admin' && adminWorkspace && (
+            <div className="admin-page">
+              <h2 style={{ marginBottom: '1.5rem' }}>Workspace Administration: {adminWorkspace.name}</h2>
+
+              <div className="card" style={{ marginBottom: '2rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <h3 style={{ color: 'var(--primary)' }}>Organization Join Code</h3>
+                    <p style={{ color: 'var(--text-muted)', marginTop: '0.5rem', fontSize: '0.9rem' }}>Share this code with your team members so they can join this workspace.</p>
+                  </div>
+                  <div style={{ background: 'rgba(255,255,255,0.05)', padding: '0.75rem 1.5rem', borderRadius: '8px', fontSize: '1.5rem', letterSpacing: '2px', fontWeight: 'bold' }}>
+                    {adminWorkspace.join_code}
+                  </div>
+                </div>
+              </div>
+
+              {/* Users table — role can be changed inline */}
+              <div className="card" style={{ marginBottom: '2rem' }}>
+                <h3 style={{ marginBottom: '1.5rem' }}>Members</h3>
+                <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+                      <th style={{ padding: '0.5rem 0', width: '50px' }}>#</th>
+                      <th style={{ padding: '0.5rem 0' }}>Email</th>
+                      <th style={{ padding: '0.5rem 0' }}>Current Role</th>
+                      <th style={{ padding: '0.5rem 0', textAlign: 'right' }}>Change Role</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {workspaceMembers.map((member, index) => (
+                      <tr key={member.user_id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                        <td style={{ padding: '0.75rem 0', color: 'var(--text-muted)' }}>{index + 1}</td>
+                        <td style={{ padding: '0.75rem 0', fontWeight: '500' }}>{member.email || member.user_id}</td>
+                        <td style={{ padding: '0.75rem 0' }}>
+                          <span style={{ padding: '0.2rem 0.6rem', borderRadius: '4px', fontSize: '0.8rem', background: member.role === 'admin' ? 'rgba(88,166,255,0.15)' : 'rgba(255,255,255,0.08)', color: member.role === 'admin' ? 'var(--primary)' : 'var(--text-muted)' }}>
+                            {member.role}
+                          </span>
+                        </td>
+                        <td style={{ padding: '0.75rem 0', textAlign: 'right', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                          <select
+                            className="form-control"
+                            style={{ width: '110px', padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}
+                            value={addMemberRole}
+                            onChange={e => setAddMemberRole(e.target.value)}
+                          >
+                            <option value="user">user</option>
+                            <option value="admin">admin</option>
+                          </select>
+                          <button
+                            className="btn"
+                            style={{ padding: '0.25rem 0.6rem', fontSize: '0.8rem' }}
+                            onClick={async () => {
+                              try {
+                                await api.addWorkspaceMember(adminWorkspace.id, member.email, addMemberRole);
+                                await loadData();
+                              } catch (err) {
+                                alert('Role change failed: ' + (err.response?.data?.detail || err.message));
+                              }
+                            }}
+                          >Apply</button>
+                          <button className="btn btn-danger" style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }} onClick={() => handleRemoveMember(member.user_id)}>Remove</button>
+                        </td>
+                      </tr>
+                    ))}
+                    {workspaceMembers.length === 0 && (
+                      <tr><td colSpan="4" style={{ padding: '1rem 0', textAlign: 'center', color: 'var(--text-muted)' }}>No members yet.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="card" style={{ borderLeft: '4px solid var(--primary)' }}>
+                <h3>Organization RAG Pipeline</h3>
+                <p style={{ marginTop: '0.5rem', color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+                  Upload brand guidelines, tone-of-voice documents, and product context.
+                  The Follow-up Agent will use this knowledge for every draft generated in this workspace.
+                </p>
+
+                {/* Upload controls */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'flex-end', marginBottom: '1rem' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Document Type</label>
+                    <select
+                      className="form-control"
+                      style={{ width: '140px' }}
+                      value={docType}
+                      onChange={e => setDocType(e.target.value)}
+                    >
+                      <option value="general">General</option>
+                      <option value="policy">Policy</option>
+                      <option value="guide">Guide</option>
+                      <option value="tone">Tone of Voice</option>
+                      <option value="product">Product Context</option>
+                    </select>
+                  </div>
+                  <div style={{ flex: 1, minWidth: '160px' }}>
+                    <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Tags (comma-separated)</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. hr, onboarding"
+                      value={docTags}
+                      onChange={e => setDocTags(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="org-doc-upload"
+                      className="btn"
+                      style={{
+                        display: 'inline-block',
+                        cursor: docUploading ? 'not-allowed' : 'pointer',
+                        opacity: docUploading ? 0.6 : 1,
+                        background: 'var(--primary)',
+                        padding: '0.55rem 1.1rem',
+                      }}
+                    >
+                      {docUploading ? 'Processing...' : 'Upload Document'}
+                    </label>
+                    <input
+                      id="org-doc-upload"
+                      type="file"
+                      accept=".pdf,.txt,.md"
+                      style={{ display: 'none' }}
+                      disabled={docUploading}
+                      onChange={handleOrgDocUpload}
+                    />
+                  </div>
+                </div>
+
+                {docUploadStatus && (
+                  <p style={{
+                    fontSize: '0.85rem',
+                    marginBottom: '1rem',
+                    color: docUploadStatus.startsWith('Success') ? 'var(--success, #10b981)' : 'var(--danger)'
+                  }}>
+                    {docUploadStatus}
+                  </p>
+                )}
+
+                {/* Document list */}
+                <div style={{ marginTop: '0.5rem', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', overflow: 'hidden' }}>
+                  {orgDocs.length === 0 ? (
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textAlign: 'center', padding: '1rem' }}>No documents uploaded yet.</p>
+                  ) : (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+                          <th style={{ padding: '0.6rem 1rem', textAlign: 'left' }}>Filename</th>
+                          <th style={{ padding: '0.6rem 1rem', textAlign: 'left' }}>Type</th>
+                          <th style={{ padding: '0.6rem 1rem', textAlign: 'left' }}>Tags</th>
+                          <th style={{ padding: '0.6rem 1rem', textAlign: 'right' }}>Chunks</th>
+                          <th style={{ padding: '0.6rem 1rem', textAlign: 'right' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {orgDocs.map((doc, idx) => (
+                          <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                            <td style={{ padding: '0.6rem 1rem', fontWeight: 500 }}>{doc.filename}</td>
+                            <td style={{ padding: '0.6rem 1rem', color: 'var(--text-muted)' }}>{doc.doc_type}</td>
+                            <td style={{ padding: '0.6rem 1rem', color: 'var(--text-muted)' }}>
+                              {doc.tags?.length > 0 ? doc.tags.join(', ') : '-'}
+                            </td>
+                            <td style={{ padding: '0.6rem 1rem', textAlign: 'right', color: 'var(--primary)' }}>{doc.chunks}</td>
+                            <td style={{ padding: '0.6rem 1rem', textAlign: 'right', display: 'flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
+                              <button
+                                className="btn"
+                                style={{ padding: '0.2rem 0.6rem', fontSize: '0.8rem', background: 'rgba(255,255,255,0.07)' }}
+                                onClick={() => setViewDoc(doc)}
+                              >View</button>
+                              <button
+                                className="btn"
+                                style={{ padding: '0.2rem 0.6rem', fontSize: '0.8rem', background: 'rgba(16,185,129,0.15)', color: 'var(--success)', border: '1px solid rgba(16,185,129,0.25)' }}
+                                onClick={() => handleDownloadDoc(doc.filename)}
+                              >Download</button>
+                              <button
+                                className="btn btn-danger"
+                                style={{ padding: '0.2rem 0.6rem', fontSize: '0.8rem' }}
+                                onClick={() => handleDeleteDoc(doc.filename)}
+                              >Delete</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </main>
       </div>
 

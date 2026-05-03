@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from domain.models import FollowUpEntity, EntityStatus, ActionMode
 from domain.state_machine import transition_state
 from infrastructure.pgvector_ctx import PgVectorContextRepository
-from infrastructure.gemini_llm import GeminiDraftingClient
+from infrastructure.cohere_llm import CohereDraftingClient as GeminiDraftingClient
 from domain.skills.draft_generation import DraftGenerationSkill
 from infrastructure.executors import EmailExecutorGateway
 
@@ -50,6 +50,21 @@ def get_context(state: GraphState):
 def generate_draft(state: GraphState):
     entity = state["entity"]
     bundle = state.get("context_bundle", {})
+    if isinstance(bundle, dict) and bundle.get("thread_summary") and not any(
+        bundle.get(key) for key in ("semantic_context", "recent_context", "org_context")
+    ):
+        thread_summary = bundle["thread_summary"]
+        if len(thread_summary) > 20000:
+            thread_summary = PgVectorContextRepository.retrieve_thread_summary(
+                source_ref=entity.source_ref,
+                ask_summary=entity.ask_summary,
+            )
+        bundle = {
+            **bundle,
+            "semantic_context": [thread_summary],
+            "recent_context": [],
+            "org_context": [],
+        }
     
     if entity.status in [EntityStatus.sent, EntityStatus.followed_up_1]:
         entity.attempts_count += 1

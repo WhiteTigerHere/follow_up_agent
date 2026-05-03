@@ -1,4 +1,5 @@
 import logging
+import re
 from uuid import UUID
 from infrastructure.supabase_repo import SupabaseRepository, supabase
 from domain.privacy import redact_text
@@ -9,6 +10,53 @@ def _display_name_from_email(email: str) -> str:
     local_part = (email or "").split("@", 1)[0]
     cleaned = local_part.replace(".", " ").replace("_", " ").replace("-", " ").strip()
     return " ".join(part.capitalize() for part in cleaned.split()) if cleaned else ""
+
+def _tokens(text: str) -> set[str]:
+    return {token for token in re.findall(r"[a-z0-9]+", (text or "").lower()) if len(token) > 2}
+
+def _score_org_chunk(query: str, content: str) -> int:
+    query_tokens = _tokens(query)
+    content_lower = (content or "").lower()
+    content_tokens = _tokens(content)
+    score = len(query_tokens & content_tokens)
+
+    amount_match = re.search(r"(?:[$₹]\s*)?(\d[\d,]*(?:\.\d+)?)", query or "")
+    if amount_match:
+        amount = float(amount_match.group(1).replace(",", ""))
+        thresholds = [float(value.replace(",", "")) for value in re.findall(r"(?:[$₹]\s*)?(\d[\d,]*(?:\.\d+)?)", content or "")]
+        if any(amount > threshold for threshold in thresholds):
+            score += 5
+
+    policy_terms = {"approval", "approved", "financial", "escalation", "server", "upgrade"}
+    score += sum(2 for term in policy_terms if term in (query or "").lower() and term in content_lower)
+    return score
+
+def _fallback_org_context(workspace_id: str, query: str, limit: int = 3) -> list[str]:
+    """
+    Keyword fallback for org knowledge when vector search is unavailable or too strict.
+    This keeps uploaded policy docs usable in demos even when embedding/RPC calls fail.
+    """
+    try:
+        response = (
+            supabase.table("org_document_embeddings")
+            .select("content")
+            .eq("workspace_id", workspace_id)
+            .limit(50)
+            .execute()
+        )
+    except Exception as e:
+        logger.warning(f"Org knowledge fallback failed: {e}")
+        return []
+
+    ranked = []
+    for row in response.data or []:
+        content = row.get("content", "")
+        score = _score_org_chunk(query, content)
+        if score > 0:
+            ranked.append((score, content))
+
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    return [redact_text(content) for _, content in ranked[:limit]]
 
 def get_context_bundle(follow_up_id: UUID) -> dict:
     """
@@ -41,20 +89,21 @@ def get_context_bundle(follow_up_id: UUID) -> dict:
         query_embedding = PgVectorContextRepository.get_embedding(entity.ask_summary)
         
         # Step A - Semantic
-        semantic_response = supabase.rpc('match_document_embeddings', {
-            'query_embedding': query_embedding,
-            'match_threshold': 0.7,
-            'match_count': 3,
-            'p_source_ref': entity.source_ref
-        }).execute()
-        
         semantic_chunks = []
         semantic_ids = set()
-        if semantic_response.data:
-            for row in semantic_response.data:
-                semantic_chunks.append(redact_text(row['content']))
-                chunk_id = row.get('id', row['content'])
-                semantic_ids.add(chunk_id)
+        if query_embedding:
+            semantic_response = supabase.rpc('match_document_embeddings', {
+                'query_embedding': query_embedding,
+                'match_threshold': 0.7,
+                'match_count': 3,
+                'p_source_ref': entity.source_ref
+            }).execute()
+
+            if semantic_response.data:
+                for row in semantic_response.data:
+                    semantic_chunks.append(redact_text(row['content']))
+                    chunk_id = row.get('id', row['content'])
+                    semantic_ids.add(chunk_id)
 
         # Step B - Recency
         recent_chunks = []
@@ -86,17 +135,20 @@ def get_context_bundle(follow_up_id: UUID) -> dict:
         # Step C - Org Knowledge (scoped strictly to this entity's workspace)
         org_chunks = []
         try:
-            org_response = supabase.rpc('match_org_documents', {
-                'query_embedding': query_embedding,
-                'match_threshold': 0.65,
-                'match_count': 3,
-                'p_workspace_id': entity.workspace_id
-            }).execute()
-            if org_response.data:
-                for row in org_response.data:
-                    org_chunks.append(redact_text(row['content']))
+            if query_embedding:
+                org_response = supabase.rpc('match_org_documents', {
+                    'query_embedding': query_embedding,
+                    'match_threshold': 0.55,
+                    'match_count': 3,
+                    'p_workspace_id': entity.workspace_id
+                }).execute()
+                if org_response.data:
+                    for row in org_response.data:
+                        org_chunks.append(redact_text(row['content']))
         except Exception as e:
             logger.warning(f"Org knowledge RAG failed (likely table/RPC missing): {e}")
+        if not org_chunks:
+            org_chunks = _fallback_org_context(entity.workspace_id, entity.ask_summary)
 
     except Exception as e:
         logger.error(f"Error fetching RAG context: {e}")

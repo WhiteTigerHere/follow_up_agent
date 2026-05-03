@@ -1,15 +1,13 @@
 import os
 import argparse
-import google.generativeai as genai
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from domain.privacy import redact_text
+from infrastructure.cohere_llm import CohereDraftingClient
 from infrastructure.supabase_repo import supabase
 from dotenv import load_dotenv
 
 env_path = os.path.join(os.path.dirname(__file__), '.env')
 load_dotenv(dotenv_path=env_path, override=True)
-
-# Configure Gemini for Embeddings
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "dummy_key"))
 
 def extract_text(file_path: str) -> str:
     ext = os.path.splitext(file_path)[1].lower()
@@ -53,14 +51,9 @@ def ingest_document(file_path: str, doc_type: str, tags: list):
     
     for i, chunk in enumerate(chunks):
         try:
-            # Generate 768-D embeddings matching the pgvector_ctx logic
-            result = genai.embed_content(
-                model="models/gemini-embedding-001",
-                content=chunk,
-                task_type="retrieval_document",
-                output_dimensionality=768
-            )
-            embedding = result['embedding']
+            safe_chunk = redact_text(chunk)
+            # Generate embeddings matching the pgvector_ctx logic.
+            embedding = CohereDraftingClient.get_embedding(safe_chunk, input_type="search_document")
             
             metadata = {
                 "source_filename": filename,
@@ -70,7 +63,7 @@ def ingest_document(file_path: str, doc_type: str, tags: list):
             
             # Insert into the org_document_embeddings table
             supabase.table('org_document_embeddings').insert({
-                "content": chunk,
+                "content": safe_chunk,
                 "embedding": embedding,
                 "metadata": metadata
             }).execute()

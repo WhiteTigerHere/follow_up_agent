@@ -1,33 +1,22 @@
 import os
-import google.generativeai as genai
 from infrastructure.supabase_repo import supabase
 from dotenv import load_dotenv
 from domain.privacy import redact_text
+from infrastructure.cohere_llm import CohereDraftingClient
 
 env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
 load_dotenv(dotenv_path=env_path, override=True)
 
-def _configure_gemini():
-    load_dotenv(dotenv_path=env_path, override=True)
-    genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "dummy_key"))
-
 class PgVectorContextRepository:
     """
-    Retrieves vector embeddings for contextual drafts using pgvector and Gemini.
+    Retrieves vector embeddings for contextual drafts using pgvector and Cohere.
     """
     @staticmethod
-    def get_embedding(text: str) -> list[float]:
+    def get_embedding(text: str, task_type: str = "retrieval_query") -> list[float]:
         try:
-            _configure_gemini()
             safe_text = redact_text(text)
-            # Using gemini-embedding-001 as it's universally available and truncating to 768 dimensions
-            result = genai.embed_content(
-                model="models/gemini-embedding-001",
-                content=safe_text,
-                task_type="retrieval_document",
-                output_dimensionality=768
-            )
-            return result['embedding']
+            input_type = "search_document" if task_type == "retrieval_document" else "search_query"
+            return CohereDraftingClient.get_embedding(safe_text, input_type=input_type)
         except Exception as e:
             print(f"Embedding error: {e}")
             return []
@@ -71,7 +60,7 @@ class PgVectorContextRepository:
         Helper method to insert new emails/messages into the vector DB.
         """
         safe_text = redact_text(text)
-        embedding = PgVectorContextRepository.get_embedding(safe_text)
+        embedding = PgVectorContextRepository.get_embedding(safe_text, task_type="retrieval_document")
         if embedding:
             supabase.table('document_embeddings').insert({
                 "source_ref": source_ref,

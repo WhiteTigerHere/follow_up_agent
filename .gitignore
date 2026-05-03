@@ -16,14 +16,27 @@ parts/
 sdist/
 var/
 wheels/
+pip-wheel-metadata/
+share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
 MANIFEST
-venv/
-env/
 .venv
+venv/
+ENV/
+env/
+.vscode/
 .env
+.env.local
+
+# Node/Frontend
+node_modules/
+dist/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
 # IDE
 .vscode/
@@ -34,39 +47,30 @@ env/
 .DS_Store
 Thumbs.db
 
+# Sensitive Files
+credentials.json
+token.json
+*.pem
+*.key
+
 # Testing
 .pytest_cache/
 .coverage
 htmlcov/
-.tox/
-.hypothesis/
-
-# Node/Frontend
-node_modules/
-frontend/node_modules/
-dist/
-.pnp
-.pnp.js
-
-# Credentials & Secrets
-credentials.json
-token.json
-.env.local
-.env.*.local
-secrets.json
-
-# Logs
-*.log
-error_log.txt
-test_output.txt
-out.txt
-
-# Database files
 *.db
 *.sqlite
-*.sqlite3
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Logs
+*.log
+error_log.txt
+out.txt
+test_output.txt
+
+# Misc
+.env
+.env.local
 *.tmp

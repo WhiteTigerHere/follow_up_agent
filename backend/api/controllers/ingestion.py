@@ -5,12 +5,14 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
 from fastapi.responses import StreamingResponse
 from typing import Optional
 from domain.models import IngestThreadRequest, IngestMessage
-from infrastructure.gemini_llm import GeminiDraftingClient
+from infrastructure.cohere_llm import CohereDraftingClient
 from infrastructure.pgvector_ctx import PgVectorContextRepository
 from infrastructure.gmail_gateway import get_thread_messages, get_thread_details
 from infrastructure.supabase_repo import supabase
 from api.dependencies import get_current_user
 from domain.privacy import redact_text
+
+GeminiDraftingClient = CohereDraftingClient
 
 router = APIRouter(prefix="/ingest", tags=["ingestion"])
 
@@ -23,7 +25,7 @@ def ingest_thread(request: IngestThreadRequest):
         # 1. Convert messages to dicts for the LLM summarizer
         msg_dicts = [{"author": m.author, "text": m.text} for m in request.messages]
         
-        # 2. Ask Gemini for an overall summary of the thread
+        # 2. Ask Cohere for an overall summary of the thread
         summary = GeminiDraftingClient.summarize_thread(msg_dicts)
         
         # 3. Store the overarching summary with pgvector, scoped to thread_id
@@ -91,7 +93,7 @@ async def upload_org_document(
     workspace_id: str = Form(...),
 ):
     """
-    Accepts a PDF, TXT, or MD file, chunks it, generates Gemini embeddings,
+    Accepts a PDF, TXT, or MD file, chunks it, generates Cohere embeddings,
     and stores every chunk in org_document_embeddings scoped to workspace_id.
     """
     allowed = {".pdf", ".txt", ".md"}
@@ -109,13 +111,7 @@ async def upload_org_document(
         tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
 
         # Re-use the ingestion logic from org_rag_ingestion.py inline
-        import google.generativeai as genai
         from langchain_text_splitters import RecursiveCharacterTextSplitter
-        from dotenv import load_dotenv
-
-        env_path = os.path.join(os.path.dirname(__file__), '..', '..', '.env')
-        load_dotenv(dotenv_path=env_path, override=True)
-        genai.configure(api_key=os.environ.get("GEMINI_API_KEY", ""))
 
         # Extract text
         if ext == ".pdf":
@@ -139,13 +135,7 @@ async def upload_org_document(
         success_count = 0
         for chunk in chunks:
             safe_chunk = redact_text(chunk)
-            result = genai.embed_content(
-                model="models/gemini-embedding-001",
-                content=safe_chunk,
-                task_type="retrieval_document",
-                output_dimensionality=768
-            )
-            embedding = result["embedding"]
+            embedding = CohereDraftingClient.get_embedding(safe_chunk, input_type="search_document")
             supabase.table("org_document_embeddings").insert({
                 "content": safe_chunk,
                 "embedding": embedding,
