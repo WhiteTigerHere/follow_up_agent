@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import * as api from './api';
 import './App.css';
 
-function FollowUpCard({ item, onApprove, onClose, onExplain, onReject, onModify, onReschedule }) {
+export function FollowUpCard({ item, onApprove, onClose, onExplain, onReject, onModify, onReschedule }) {
   const [draftText, setDraftText] = useState(item.current_draft || '');
   const [isEditing, setIsEditing] = useState(false);
   const [isRescheduling, setIsRescheduling] = useState(false);
@@ -152,7 +152,7 @@ function FollowUpCard({ item, onApprove, onClose, onExplain, onReject, onModify,
   );
 }
 
-function CreateForm({ onCreated, workspaceId }) {
+export function CreateForm({ onCreated, workspaceId }) {
   const getLocalISOTime = () => {
     const tzoffset = (new Date()).getTimezoneOffset() * 60000;
     return (new Date(Date.now() - tzoffset)).toISOString().slice(0, 16);
@@ -318,7 +318,7 @@ function CreateForm({ onCreated, workspaceId }) {
   )
 }
 
-function ExplainModal({ data, onClose }) {
+export function ExplainModal({ data, onClose }) {
   if (!data) return null;
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -327,8 +327,8 @@ function ExplainModal({ data, onClose }) {
         <div style={{ marginTop: '1rem', color: 'var(--text-muted)' }}>
           <p><strong>Pending:</strong> {data.what_is_pending}</p>
           <p><strong>Owner:</strong> {data.who_owes_it}</p>
-          <p><strong>Reason:</strong> {data.why_triggered}</p>
-          <p><strong>Next steps:</strong> {data.what_happens_next}</p>
+          <p><strong>Reason:</strong> {data.why_triggered || data.reason_triggered}</p>
+          <p><strong>Next steps:</strong> {data.what_happens_next || data.next_action}</p>
         </div>
 
         <h3 style={{ marginTop: '1.5rem' }}>Timeline</h3>
